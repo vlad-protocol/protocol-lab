@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* HQ design tokens, matched to the reference screenshots */
+  --hq-sidebar: #17171f;
+  --hq-sidebar-border: #26262f;
+  --hq-sidebar-hover: #202029;
+  --hq-sidebar-active: #262f42;
+  --hq-sidebar-text: #d4d4d8;
+  --hq-sidebar-text-dim: #71717a;
+  --hq-canvas: #faf7f2;
+  --hq-card: #ffffff;
+  --hq-card-border: #e7e2d9;
+  --hq-text: #18181b;
+  --hq-text-muted: #71717a;
+  --hq-accent: #3b5bfa;
+  --hq-accent-soft: #eef1ff;
+  --hq-positive: #16a34a;
+  --hq-negative: #dc2626;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}

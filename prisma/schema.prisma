@@ -1,0 +1,202 @@
+// Prisma schema for the personal HQ dashboard.
+// Each phase of the build adds more models here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Phase 1: auth -----------------------------------------------------
+
+enum Role {
+  OWNER
+  EMPLOYEE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         Role     @default(OWNER)
+  // Module keys this user can see, e.g. ["content","analytics","people",
+  // "mail","comms","automations"]. Ignored for OWNER, who always sees
+  // everything — this only restricts EMPLOYEE accounts.
+  permissions  String[] @default([])
+  invitedById  String?
+  invitedBy    User?    @relation("Invites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers User[]   @relation("Invites")
+  createdAt    DateTime @default(now())
+
+  reels             Reel[]
+  stats             WeeklyStat[]
+  contactsAssigned  Contact[]      @relation("AssignedRep")
+  contactsCreated   Contact[]      @relation("CreatedBy")
+  interactions      Interaction[]
+  automations       Automation[]
+  emailTemplates    EmailTemplate[]
+  gmailConnection   GmailConnection?
+}
+
+// --- Phase 2: content & analytics ---------------------------------------
+
+model Reel {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform        String
+  title           String
+  url             String?
+  views           Int      @default(0)
+  followersGained Int      @default(0)
+  postedAt        DateTime
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, postedAt])
+}
+
+model WeeklyStat {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform      String
+  weekOf        DateTime
+  followerCount Int
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, platform, weekOf])
+}
+
+// --- Phase 3/4: CRM + comms ----------------------------------------------
+
+enum ContactStatus {
+  LEAD
+  ACTIVE
+  CLIENT
+  CLOSED
+}
+
+model Contact {
+  id            String        @id @default(cuid())
+  companyName   String?
+  contactName   String
+  title         String? // e.g. "CEO"
+  email         String?
+  phone         String?
+  status        ContactStatus @default(LEAD)
+  tags          String[]      @default([])
+  notes         String?
+  assignedRepId String?
+  assignedRep   User?         @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     User?         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+
+  interactions Interaction[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+enum InteractionType {
+  EMAIL
+  CALL
+  TEXT
+  NOTE
+}
+
+enum InteractionDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model Interaction {
+  id              String                @id @default(cuid())
+  contactId       String
+  contact         Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId          String? // rep who sent/handled it, null for pure inbound auto-logged
+  user            User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type            InteractionType
+  direction       InteractionDirection
+  subject         String?
+  body            String?
+  fromAddress     String?
+  toAddress       String?
+  phoneNumber     String?
+  durationSeconds Int?
+  recordingUrl    String?
+  externalId      String? // Gmail message id / Twilio call or message sid, for de-duping syncs
+  occurredAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([contactId, occurredAt])
+  @@index([externalId])
+}
+
+// --- Automations ----------------------------------------------------------
+
+enum AutomationTrigger {
+  NEW_CONTACT
+  TAG_ADDED
+  NO_REPLY_DAYS
+  MANUAL
+}
+
+enum AutomationAction {
+  SEND_EMAIL
+  ADD_TAG
+  LOG_NOTE
+}
+
+model Automation {
+  id            String            @id @default(cuid())
+  name          String
+  triggerType   AutomationTrigger
+  triggerConfig Json @default("{}")
+  actionType    AutomationAction
+  actionConfig  Json @default("{}")
+  enabled       Boolean           @default(true)
+  createdById   String?
+  createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  lastRunAt     DateTime?
+  createdAt     DateTime          @default(now())
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  body        String
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
+
+// --- Integrations -----------------------------------------------------
+
+// One Gmail connection per rep, so "who's in contact with the client"
+// can send/reply as themselves.
+model GmailConnection {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  accessToken  String // encrypted at rest, see src/lib/crypto.ts
+  refreshToken String // encrypted at rest
+  expiresAt    DateTime
+  connectedAt  DateTime @default(now())
+}
+
+// Single shared business line — everyone texts/calls from the same number.
+model TwilioConnection {
+  id          String   @id @default(cuid())
+  accountSid  String
+  authToken   String // encrypted at rest
+  phoneNumber String
+  connectedAt DateTime @default(now())
+}
