@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const count = await prisma.user.count();
   if (count > 0) {
     return NextResponse.json(
-      { error: "Setup already completed. This HQ already has an owner account." },
+      { error: "Setup already completed. Protocol Lab already has an owner account." },
       { status: 403 }
     );
   }

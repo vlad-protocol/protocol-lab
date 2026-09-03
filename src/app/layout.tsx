@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "My HQ",
+  title: "Protocol Lab",
   description: "Personal business command center",
 };
 

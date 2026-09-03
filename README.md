@@ -1,13 +1,14 @@
-# My HQ
+# Protocol Lab
 
 A personal business dashboard, built to eventually replace the paid tools you use
 day to day — inspired by the "content engine" walkthrough. This covers the
 foundation plus a working CRM, comms, and automations layer with a full
-team/permissions system.
+team/permissions system, and a Training module for tracking your own
+fight-camp schedule alongside the business.
 
 ## What's actually working right now
 
-- **One-time account setup** at `/setup` — creates the owner login for this HQ.
+- **One-time account setup** at `/setup` — creates the owner login for Protocol Lab.
 - **Login** at `/login`.
 - **Content tracker** (`/dashboard/content`) — logs reels/posts, ranked by
   followers gained per 10,000 views.
@@ -32,6 +33,11 @@ team/permissions system.
   on/off checkbox per module. You (the owner) always have full access;
   employees only see what's checked. Changes take effect on their very
   next click, not their next login.
+- **Training** (`/dashboard/training`) — your personal fight-camp schedule
+  (Muay Thai / BJJ / strength / recovery), the full session library for
+  every protocol referenced in the week, and the training principles behind
+  the sequencing. Each day can be checked off as done, per week, so you can
+  see your adherence over time.
 - Everything else in the sidebar (Recordings, Copilot, Docs, Scheduler, Ads,
   etc.) is a placeholder for a later phase.
 

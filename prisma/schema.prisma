@@ -40,6 +40,7 @@ model User {
   automations       Automation[]
   emailTemplates    EmailTemplate[]
   gmailConnection   GmailConnection?
+  trainingCheckIns  TrainingCheckIn[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -199,4 +200,22 @@ model TwilioConnection {
   authToken   String // encrypted at rest
   phoneNumber String
   connectedAt DateTime @default(now())
+}
+
+// --- Training -------------------------------------------------------------
+
+// The weekly schedule, session library, and principles live as static data
+// in src/lib/training-data.ts. This model is just the per-user adherence
+// tracker: did you actually do Monday's session this week. Personal to
+// whoever checks it off — not shared across the team.
+model TrainingCheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayKey    String // "mon" .. "sun", matches training-data.ts
+  weekOf    DateTime // normalized to that week's Monday, 00:00
+  done      Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, dayKey, weekOf])
 }

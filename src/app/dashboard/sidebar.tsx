@@ -38,7 +38,7 @@ export function Sidebar({
           <Icons.Sparkle className="h-4 w-4 text-white" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-wide text-white">{userLabel}</p>
+          <p className="truncate text-sm font-semibold tracking-wide text-white">Protocol Lab</p>
           <p className="truncate text-xs text-[var(--hq-sidebar-text-dim)]">{handle}</p>
         </div>
         {role === "EMPLOYEE" && (
@@ -69,7 +69,7 @@ export function Sidebar({
         </p>
         <div className="flex items-center gap-2 rounded-md bg-[var(--hq-sidebar-active)] px-2.5 py-1.5 text-sm font-medium text-white">
           <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-          Personal Brand
+          {userLabel}
         </div>
       </div>
 

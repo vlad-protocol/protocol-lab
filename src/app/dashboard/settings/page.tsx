@@ -45,7 +45,7 @@ export default async function SettingsPage() {
                 Mail page
               </Link>{" "}
               — that way email sent through the CRM comes from them, not a shared account.
-              To make that available at all, this HQ's deployment needs Google OAuth
+              To make that available at all, Protocol Lab's deployment needs Google OAuth
               credentials set as environment variables (GOOGLE_CLIENT_ID,
               GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI) — see the README for the exact
               steps in Google Cloud Console.

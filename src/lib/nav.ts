@@ -57,6 +57,12 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Personal",
+    items: [
+      { href: "/dashboard/training", label: "Training", icon: "Dumbbell", module: "training" },
+    ],
+  },
+  {
     label: "System",
     items: [
       { href: "/dashboard/automations", label: "Automations", icon: "Workflow", module: "automations" },

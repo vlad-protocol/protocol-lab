@@ -39,7 +39,7 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-[var(--hq-canvas)]">
       <Sidebar
-        userLabel={session.user?.name || "My HQ"}
+        userLabel={session.user?.name || "Owner"}
         handle={session.user?.email || ""}
         followerLabel={total > 0 ? `${formatFollowers(total)} followers tracked` : null}
         role={session.user.role}

@@ -8,6 +8,7 @@ export const MODULES = [
   { key: "mail", label: "Mail" },
   { key: "comms", label: "Comms (texts)" },
   { key: "automations", label: "Automations" },
+  { key: "training", label: "Training" },
   { key: "team", label: "Team & permissions (admin-only in practice)" },
 ] as const;
 
