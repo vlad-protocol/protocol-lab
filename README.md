@@ -38,8 +38,47 @@ fight-camp schedule alongside the business.
   every protocol referenced in the week, and the training principles behind
   the sequencing. Each day can be checked off as done, per week, so you can
   see your adherence over time.
-- Everything else in the sidebar (Recordings, Copilot, Docs, Scheduler, Ads,
-  etc.) is a placeholder for a later phase.
+- **Shoot Board** (`/dashboard/shoots`) — a per-client content production
+  Kanban: Scripting → Film → Editing → Ready to Post → Posted. Drag a card
+  between columns (or use the arrow buttons on mobile), filter by client,
+  attach a card to a real CRM contact or just type a client label if there's
+  no contact yet.
+- **Content Lab** (`/dashboard/lab`) — Ad Analyzer, Script Analyzer, and
+  Trend Log in one place. Paste in a transcript/script from a well-performing
+  ad or video, tag it to a client, and write up why it works — this is what
+  you'd use to coach a client on their own ad-making. This is manual capture
+  for now (v1); a live Meta Ads pull and AI-generated breakdowns are the
+  natural next step once an ad account and API keys are connected.
+- **Brain** (`/dashboard/brain`) — your personal knowledge library:
+  Learnings (from books/podcasts, with a source), Thoughts, and Notes, each
+  tagged to one of nine fixed categories (Personal, Business, Marketing,
+  Events, Fitness, Philosophy, Creativity, Relationships, Other), searchable
+  and filterable. Built to match the "MY BRAIN" capture rules from your
+  other notes system — plain capture, your own words, no unsolicited
+  analysis.
+- **Calendar** (`/dashboard/calendar`) — shared events list, upcoming first,
+  optionally linked to a CRM contact. Google Calendar sync is a later step.
+- **Booking** (`/dashboard/booking`) — set your weekly availability windows,
+  share the public **`/book`** page, confirm or decline requests as they
+  come in.
+- **Docs & Sign** (`/dashboard/docs`) — draft a document, mark it sent, share
+  its `/sign/[id]` link. The recipient types their legal name to sign — no
+  account needed. Not a certified e-signature product, good for internal
+  agreements.
+- **Recordings** (`/dashboard/recordings`) — one library for screen
+  recordings, uploaded videos, and Twilio call recording links.
+- **Copilot** (`/dashboard/copilot`) — paste a transcript, write up the
+  summary/decisions/action items. Live auto-transcription is a later step.
+- **IG Automations** (`/dashboard/ig-automations`) — define comment/DM-keyword
+  auto-reply rules now; actually firing them needs a connected Meta/Instagram
+  Graph API app (its own review process) — ask me to wire that in when ready.
+- **Ads** (`/dashboard/ads`) — manual ledger of what's running per client and
+  platform: budget, spend, results, status. A live Meta Ads pull is a later
+  step once an ad account and API keys are connected.
+
+Every placeholder from the original phase plan is now built, except for the
+pieces that genuinely need external credentials from you first: live Meta
+Ads sync, real IG automation firing, and Google Calendar sync.
 
 ## Tech stack
 
@@ -122,15 +161,35 @@ one-time temporary password shown once on screen, which you share with them
 directly (Slack, text, in person). A future pass could wire up real email
 invites and let people set their own password on first login.
 
-## Automations — the honest version
+## Automations — what actually runs on its own
 
-Automations run when you click "Run now," not automatically on a schedule.
-Railway doesn't run background cron jobs for a plain web service by
-default. To make these actually automatic, the cleanest fix is a small
-Railway Cron Job (a separate service in the same project) that hits
-`POST /api/automations/{id}/run` for each enabled automation on a schedule
-— ask me to wire that up once you've decided which automations you want
-running unattended.
+The app checks for due automations every 15 minutes, in the background,
+inside the same running server — no separate Railway cron service needed
+(see `src/instrumentation.ts`). But only automations that are *safe* to
+fire unattended do this automatically:
+
+- **New contact added** — always safe (only ever matches contacts created
+  since the last run, so it can't double-fire).
+- **No reply after N days** — always safe (its own action logs a new
+  outbound touch, which pushes that contact's "last contact" date forward,
+  so they naturally stop matching until they go quiet again).
+- **Contact has tag → Add tag** — safe (adding a tag someone already has is
+  a no-op).
+- **Everything else** (tag-triggered emails/notes, and anything set to
+  "Manual / all contacts") stays click-to-run on purpose — otherwise a
+  tag-triggered email would re-send to the same contact every 15 minutes,
+  forever. The automations list shows which of yours auto-run vs. need a
+  click.
+
+## Getting Claude's updates onto your site
+
+After Claude sends you an updated `hq-app.zip`, download it and double-click
+`scripts/update.command` inside this project folder (Finder → your hq-app
+folder → scripts → update.command). It finds the newest zip in your
+Downloads automatically, merges it in, commits, and pushes — Railway
+redeploys on its own from there. No need to open Terminal or copy/paste
+commands; if double-clicking prompts about running a script from an
+unidentified developer, right-click it and choose "Open" once to allow it.
 
 ## Running it on your own computer first
 

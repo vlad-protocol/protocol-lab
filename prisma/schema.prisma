@@ -41,6 +41,16 @@ model User {
   emailTemplates    EmailTemplate[]
   gmailConnection   GmailConnection?
   trainingCheckIns  TrainingCheckIn[]
+  shootCards        ShootCard[]
+  labEntries        StudioEntry[]
+  brainEntries      BrainEntry[]
+  calendarEvents    CalendarEvent[]
+  availabilities    Availability[]
+  docs              DocRecord[]
+  recordings        Recording[]
+  meetingNotes      MeetingNote[]
+  igAutomations     IGAutomation[]
+  adCampaigns       AdCampaign[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -99,6 +109,13 @@ model Contact {
   createdAt     DateTime      @default(now())
 
   interactions Interaction[]
+  shootCards   ShootCard[]
+  labEntries   StudioEntry[]
+  calendarEvents CalendarEvent[]
+  docs         DocRecord[]
+  recordings   Recording[]
+  meetingNotes MeetingNote[]
+  adCampaigns  AdCampaign[]
 
   @@index([email])
   @@index([phone])
@@ -218,4 +235,271 @@ model TrainingCheckIn {
   createdAt DateTime @default(now())
 
   @@unique([userId, dayKey, weekOf])
+}
+
+// --- Shoot Board (per-client content production Kanban) -------------------
+
+enum ShootStage {
+  SCRIPTING
+  FILM
+  EDITING
+  READY
+  POSTED
+}
+
+model ShootCard {
+  id          String     @id @default(cuid())
+  contactId   String? // the client this piece of content is for
+  contact     Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  clientLabel String? // freeform fallback when there's no CRM contact yet, e.g. "Sauna manufacturer"
+  title       String
+  notes       String?
+  stage       ShootStage @default(SCRIPTING)
+  order       Int        @default(0) // position within its column
+  dueDate     DateTime?
+  createdById String?
+  createdBy   User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([stage, order])
+  @@index([contactId])
+}
+
+// --- Content Lab (ad / script / trend breakdowns) --------------------------
+// v1 is manual capture: paste a transcript or describe a trend you spotted
+// and log the breakdown. Live Meta Ads pulls and AI-generated analysis are
+// the natural next step once ad-account credentials are connected.
+
+enum StudioEntryKind {
+  AD
+  SCRIPT
+  TREND
+}
+
+model StudioEntry {
+  id          String          @id @default(cuid())
+  kind        StudioEntryKind
+  title       String
+  clientId    String?
+  client      Contact?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  platform    String?
+  sourceUrl   String?
+  content     String? // the raw script / transcript / trend description
+  breakdown   String? // what's working / why it matters / how to use it with clients
+  tags        String[]        @default([])
+  createdById String?
+  createdBy   User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+
+  @@index([kind, createdAt])
+}
+
+// --- Brain (personal knowledge system: learnings / thoughts / notes) ------
+
+enum BrainType {
+  LEARNING
+  THOUGHT
+  NOTE
+}
+
+enum BrainCategory {
+  PERSONAL
+  BUSINESS
+  MARKETING
+  EVENTS
+  FITNESS
+  PHILOSOPHY
+  CREATIVITY
+  RELATIONSHIPS
+  OTHER
+}
+
+model BrainEntry {
+  id          String        @id @default(cuid())
+  type        BrainType
+  category    BrainCategory @default(OTHER)
+  source      String? // book / podcast / person it came from, blank for own thoughts
+  content     String
+  createdById String?
+  createdBy   User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+
+  @@index([type, category, createdAt])
+}
+
+// --- Calendar ---------------------------------------------------------
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  startsAt    DateTime
+  endsAt      DateTime
+  allDay      Boolean  @default(false)
+  location    String?
+  notes       String?
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([startsAt])
+}
+
+// --- Booking ------------------------------------------------------------
+// v1: you set weekly availability windows, share the public /book link,
+// people request a slot, you confirm or decline from the dashboard. No
+// external calendar sync yet — that's the natural next step.
+
+model Availability {
+  id          String   @id @default(cuid())
+  dayOfWeek   Int // 0 = Sunday .. 6 = Saturday
+  startTime   String // "09:00"
+  endTime     String // "17:00"
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([dayOfWeek])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+}
+
+model BookingRequest {
+  id          String        @id @default(cuid())
+  name        String
+  email       String
+  phone       String?
+  message     String?
+  requestedAt DateTime // the slot they asked for
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+
+  @@index([status, requestedAt])
+}
+
+// --- Docs + Sign ----------------------------------------------------------
+// A document's lifecycle: draft -> sent -> signed. Signing is a typed
+// legal-name capture on a public link, not a certified e-signature product
+// — good enough for internal agreements, not a DocuSign replacement.
+
+enum DocStatus {
+  DRAFT
+  SENT
+  SIGNED
+}
+
+model DocRecord {
+  id          String    @id @default(cuid())
+  title       String
+  content     String // plain text / markdown body
+  status      DocStatus @default(DRAFT)
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  signerName  String?
+  signerEmail String?
+  signedAt    DateTime?
+  sentAt      DateTime?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+}
+
+// --- Recordings -----------------------------------------------------------
+// A library of recordings — Loom-style screen shares, uploaded videos, or
+// links to Twilio call recordings already captured through Comms.
+
+enum RecordingKind {
+  SCREEN
+  CALL
+  VIDEO
+}
+
+model Recording {
+  id          String        @id @default(cuid())
+  title       String
+  url         String
+  kind        RecordingKind @default(SCREEN)
+  contactId   String?
+  contact     Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  notes       String?
+  createdById String?
+  createdBy   User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+}
+
+// --- Copilot (meeting / call notes) ----------------------------------------
+// Paste a transcript, capture the summary/decisions/action items. Live
+// auto-transcription is the natural next step once a speech-to-text key is
+// connected — this is the structured-notes half of that working today.
+
+model MeetingNote {
+  id           String   @id @default(cuid())
+  title        String
+  contactId    String?
+  contact      Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  transcript   String?
+  summary      String?
+  decisions    String?
+  actionItems  String?
+  createdById  String?
+  createdBy    User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+}
+
+// --- IG Automations ---------------------------------------------------
+// Config lives here and the rules are visible/editable now; actually
+// firing them against Instagram needs a connected Meta/Instagram Graph
+// API app (its own approval process) — wire that in once you have it.
+
+enum IGTrigger {
+  COMMENT_KEYWORD
+  DM_KEYWORD
+  NEW_FOLLOWER
+}
+
+model IGAutomation {
+  id          String    @id @default(cuid())
+  name        String
+  trigger     IGTrigger
+  keyword     String?
+  replyText   String?
+  enabled     Boolean   @default(true)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+}
+
+// --- Ads (manual tracker) --------------------------------------------------
+// v1 is a manual ledger of what's running per client/platform. A live Meta
+// Ads pull (spend, results synced automatically) is the natural next step
+// once an ad account and API keys are connected.
+
+enum AdStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+model AdCampaign {
+  id          String    @id @default(cuid())
+  name        String
+  platform    String    @default("meta")
+  clientId    String?
+  client      Contact?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  budget      Float?
+  spend       Float?
+  results     String?
+  status      AdStatus  @default(ACTIVE)
+  startDate   DateTime?
+  endDate     DateTime?
+  notes       String?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
 }

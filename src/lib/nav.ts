@@ -21,7 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
       { href: "/dashboard/content", label: "Trial Reels", icon: "Flame", module: "content" },
       { href: "/dashboard/analytics", label: "Analytics", icon: "BarChart2", module: "analytics" },
-      { href: "/dashboard/ads", label: "Ads", icon: "Megaphone", phase: 7 },
+      { href: "/dashboard/ads", label: "Ads", icon: "Megaphone", module: "ads" },
     ],
   },
   {
@@ -35,31 +35,31 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/mail", label: "Mail", icon: "Mail", module: "mail" },
       { href: "/dashboard/comms", label: "Comms", icon: "MessageSquare", module: "comms" },
-      { href: "/dashboard/recordings", label: "Recordings", icon: "Video", phase: 6 },
-      { href: "/dashboard/copilot", label: "Copilot", icon: "Bot", phase: 6 },
+      { href: "/dashboard/recordings", label: "Recordings", icon: "Video", module: "recordings" },
+      { href: "/dashboard/copilot", label: "Copilot", icon: "Bot", module: "copilot" },
     ],
   },
   {
-    label: "Content",
+    label: "Studio",
     items: [
-      { href: "/dashboard/queue", label: "Queue", icon: "ListChecks", phase: 6 },
-      { href: "/dashboard/editor", label: "Editor", icon: "Edit3", phase: 6 },
-      { href: "/dashboard/ig-automations", label: "IG Automations", icon: "Zap", phase: 7 },
+      { href: "/dashboard/shoots", label: "Shoot Board", icon: "Kanban", module: "shoots" },
+      { href: "/dashboard/lab", label: "Content Lab", icon: "FlaskConical", module: "lab" },
+      { href: "/dashboard/ig-automations", label: "IG Automations", icon: "Zap", module: "ig_automations" },
     ],
   },
   {
     label: "Work",
     items: [
-      { href: "/dashboard/calendar", label: "Calendar", icon: "Calendar", phase: 6 },
-      { href: "/dashboard/booking", label: "Booking", icon: "CalendarClock", phase: 6 },
-      { href: "/dashboard/docs", label: "Docs", icon: "FileText", phase: 5 },
-      { href: "/dashboard/sign", label: "Sign", icon: "PenTool", phase: 5 },
+      { href: "/dashboard/calendar", label: "Calendar", icon: "Calendar", module: "calendar" },
+      { href: "/dashboard/booking", label: "Booking", icon: "CalendarClock", module: "booking" },
+      { href: "/dashboard/docs", label: "Docs & Sign", icon: "FileText", module: "docs" },
     ],
   },
   {
     label: "Personal",
     items: [
       { href: "/dashboard/training", label: "Training", icon: "Dumbbell", module: "training" },
+      { href: "/dashboard/brain", label: "Brain", icon: "Brain", module: "brain" },
     ],
   },
   {

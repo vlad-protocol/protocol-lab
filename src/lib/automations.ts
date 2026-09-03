@@ -7,10 +7,48 @@ function fillTemplate(text: string, contact: { contactName: string; companyName:
     .replaceAll("{{companyName}}", contact.companyName || "");
 }
 
-// Runs on demand (the "Run now" button) rather than on a background
-// schedule — Railway doesn't run cron jobs for you by default, so this is
-// the honest version of "automated" until a real scheduler is wired up
-// (a Railway cron service hitting this same endpoint would do it).
+// Whether it's safe to fire this automation on a recurring timer, with no
+// human clicking "Run now" first. Two things make that safe: the trigger is
+// naturally incremental (it only ever matches *new* activity since the last
+// run, so re-running can't double-fire), or the action itself is idempotent
+// (running it again on the same contact is a no-op). Everything else stays
+// manual-only on purpose — e.g. "tag added" + "send email" would otherwise
+// re-send that email to the same contact every single tick forever.
+export function isSafeToAutoRun(automation: { triggerType: string; actionType: string }) {
+  if (automation.triggerType === "NEW_CONTACT") return true; // scoped to createdAt > lastRunAt
+  if (automation.triggerType === "NO_REPLY_DAYS") return true; // its own action logs an
+  // outbound interaction, which pushes the contact's "last contact" date
+  // forward — so the same contact stops matching until they go quiet again.
+  if (automation.triggerType === "TAG_ADDED" && automation.actionType === "ADD_TAG") return true; // no-op once tagged
+  return false; // TAG_ADDED + email/note, and MANUAL, stay click-to-run.
+}
+
+// Runs every AUTO_RUN_INTERVAL_MS in production (see instrumentation.ts) for
+// every enabled automation that's safe to fire unattended, skipping any run
+// again within AUTO_RUN_MIN_GAP_MS of its last run.
+export async function runDueAutomations(minGapMs: number) {
+  const automations = await prisma.automation.findMany({ where: { enabled: true } });
+  const due = automations.filter(
+    (a) =>
+      isSafeToAutoRun(a) &&
+      (!a.lastRunAt || Date.now() - a.lastRunAt.getTime() >= minGapMs)
+  );
+  const results: { id: string; name: string; result?: Awaited<ReturnType<typeof runAutomation>>; error?: string }[] = [];
+  for (const automation of due) {
+    try {
+      const result = await runAutomation(automation.id);
+      results.push({ id: automation.id, name: automation.name, result });
+    } catch (err) {
+      results.push({ id: automation.id, name: automation.name, error: err instanceof Error ? err.message : "failed" });
+    }
+  }
+  return results;
+}
+
+// Runs on demand (the "Run now" button), and also automatically — see
+// isSafeToAutoRun/runDueAutomations above and instrumentation.ts, which
+// fires this on a timer inside the running server process. No separate
+// Railway cron service needed.
 export async function runAutomation(automationId: string) {
   const automation = await prisma.automation.findUnique({ where: { id: automationId } });
   if (!automation) throw new Error("Automation not found.");

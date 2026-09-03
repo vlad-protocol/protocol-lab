@@ -28,6 +28,15 @@ const ACTION_LABEL: Record<string, string> = {
   LOG_NOTE: "Log a note",
 };
 
+// Mirrors isSafeToAutoRun() in src/lib/automations.ts — keep in sync.
+// Anything else stays "Run now"-only so it can never double-fire on a timer.
+function autoRuns(triggerType: string, actionType: string) {
+  if (triggerType === "NEW_CONTACT") return true;
+  if (triggerType === "NO_REPLY_DAYS") return true;
+  if (triggerType === "TAG_ADDED" && actionType === "ADD_TAG") return true;
+  return false;
+}
+
 export function AutomationsClient({ initialAutomations }: { initialAutomations: Automation[] }) {
   const router = useRouter();
   const [automations, setAutomations] = useState(initialAutomations);
@@ -218,6 +227,15 @@ export function AutomationsClient({ initialAutomations }: { initialAutomations: 
                   {TRIGGER_LABEL[a.triggerType]} → {ACTION_LABEL[a.actionType]}
                   {a.lastRunAt && ` · last run ${new Date(a.lastRunAt).toLocaleString()}`}
                 </p>
+                <span
+                  className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    autoRuns(a.triggerType, a.actionType)
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-neutral-100 text-neutral-500"
+                  }`}
+                >
+                  {autoRuns(a.triggerType, a.actionType) ? "Auto-runs every 15 min" : "Manual — click Run now"}
+                </span>
               </div>
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1.5 text-xs text-[var(--hq-text-muted)]">

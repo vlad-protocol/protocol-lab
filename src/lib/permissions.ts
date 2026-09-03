@@ -9,6 +9,16 @@ export const MODULES = [
   { key: "comms", label: "Comms (texts)" },
   { key: "automations", label: "Automations" },
   { key: "training", label: "Training" },
+  { key: "shoots", label: "Shoot Board" },
+  { key: "lab", label: "Content Lab (ads/scripts/trends)" },
+  { key: "brain", label: "Brain (notes)" },
+  { key: "calendar", label: "Calendar" },
+  { key: "booking", label: "Booking" },
+  { key: "docs", label: "Docs & Sign" },
+  { key: "recordings", label: "Recordings" },
+  { key: "copilot", label: "Copilot (meeting notes)" },
+  { key: "ads", label: "Ads" },
+  { key: "ig_automations", label: "IG Automations" },
   { key: "team", label: "Team & permissions (admin-only in practice)" },
 ] as const;
 
