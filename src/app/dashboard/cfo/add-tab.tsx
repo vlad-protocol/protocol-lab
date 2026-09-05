@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Sparkles, Trash2, Save } from "lucide-react";
+import { useRef, useState } from "react";
+import { Sparkles, Trash2, Save, Upload } from "lucide-react";
 import type { Category, Transaction } from "./types";
 import { money } from "./types";
 
@@ -28,15 +28,15 @@ export function AddTab({
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function handleParse() {
+  async function runParse(payload: { text: string; format: "text" | "csv" }) {
     setError(null);
-    if (!text.trim()) return;
     setParsing(true);
     const res = await fetch("/api/cfo/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     setParsing(false);
@@ -47,6 +47,19 @@ export function AddTab({
     setRows(
       data.rows.map((r: Omit<DraftRow, "rememberRule">) => ({ ...r, rememberRule: false }))
     );
+  }
+
+  async function handleParse() {
+    if (!text.trim()) return;
+    await runParse({ text, format: "text" });
+  }
+
+  async function handleCSVUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const csvText = await file.text();
+    await runParse({ text: csvText, format: "csv" });
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function updateRow(i: number, patch: Partial<DraftRow>) {
@@ -86,10 +99,31 @@ export function AddTab({
   return (
     <div>
       <p className="text-sm text-[var(--hq-text-muted)]">
-        Open Wealthsimple → Activity → select and copy the transactions you want to log → paste the
-        whole block below. Parsing is best-effort (there's no real API to read from), so review every
-        row before saving — dates, amounts, and categories are all editable.
+        Best option: Wealthsimple → Chequing → Activity → "Download activities" gives you a CSV
+        with real dates and amounts — upload it below. No merchant names come through in that
+        export, so those rows land as "Card purchase" for you to categorize. Alternatively, copy
+        and paste the activity feed as text — either way, review every row before saving.
       </p>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={handleCSVUpload}
+          className="hidden"
+          id="cfo-csv-input"
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={parsing}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--hq-card-border)] bg-white px-4 py-2 text-sm font-medium text-[var(--hq-text)] disabled:opacity-60"
+        >
+          <Upload className="h-4 w-4" /> Upload Wealthsimple CSV
+        </button>
+        <span className="text-xs text-[var(--hq-text-muted)]">or paste text below</span>
+      </div>
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}

@@ -165,6 +165,121 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
   return rows;
 }
 
+// Parses the OFFICIAL export CSV from Wealthsimple (Chequing/Activity →
+// "Download activities"). This is far more reliable than the copy-paste
+// path above — real dates, real signed amounts — but Wealthsimple's export
+// doesn't include merchant names for card purchases (activity_sub_type
+// "SPEND" just says "Spend"), so those rows come back generically labeled
+// and land in "uncategorized" for you to fill in from memory or receipts.
+// Columns: effective_date,effective_time,settlement_date,account_id,
+// account_type,activity_type,activity_sub_type,description,direction,
+// symbol,name,currency,quantity,unit_price,commission,net_cash_amount
+const INCOME_SUB_TYPES = new Set(["E_TRFIN", "AFT_IN", "GIVEAWAY", "DIV", "INT"]);
+const TRANSFER_SUB_TYPES = new Set(["TRANSFER_TF", "E_TRFOUT", "OBP_OUT", "OBP_IN"]);
+
+function splitCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      cells.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
+function describeActivity(subType: string, description: string): string {
+  const clean = (description || "").trim();
+  switch (subType) {
+    case "SPEND":
+      return "Card purchase";
+    case "TRANSFER_TF":
+      return "Transfer";
+    case "E_TRFOUT":
+      return "Interac e-Transfer out";
+    case "E_TRFIN":
+      return "Interac e-Transfer in";
+    case "AFT_IN":
+      return "Direct deposit";
+    case "OBP_OUT":
+      return "Bill payment";
+    case "OBP_IN":
+      return "Bill payment received";
+    case "GIVEAWAY":
+      return "Wealthsimple bonus";
+    case "INT":
+      return "Interest";
+    default:
+      return clean || subType || "Transaction";
+  }
+}
+
+export function parseWealthsimpleCSV(raw: string): ParsedRow[] {
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+
+  const header = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const idx = (name: string) => header.indexOf(name);
+  const iDate = idx("effective_date");
+  const iSubType = idx("activity_sub_type");
+  const iDescription = idx("description");
+  const iAmount = idx("net_cash_amount");
+  const iActivityType = idx("activity_type");
+
+  if (iDate === -1 || iAmount === -1) return []; // not a recognizable Wealthsimple export
+
+  const rows: ParsedRow[] = [];
+  for (let li = 1; li < lines.length; li++) {
+    const cells = splitCsvLine(lines[li]);
+    const date = (cells[iDate] || "").trim();
+    const amountRaw = (cells[iAmount] || "").trim();
+    if (!date || !amountRaw) continue;
+
+    const amount = Number(amountRaw.replace(/,/g, ""));
+    if (!amount || Number.isNaN(amount)) continue;
+
+    const subType = (cells[iSubType] || "").trim();
+    const activityType = (cells[iActivityType] || "").trim();
+    const rawDescription = (cells[iDescription] || "").trim();
+
+    const type: ParsedRow["type"] =
+      amount > 0 || INCOME_SUB_TYPES.has(subType) || activityType === "Interest" || activityType === "BonusPayment"
+        ? "INCOME"
+        : "EXPENSE";
+
+    const category = TRANSFER_SUB_TYPES.has(subType) ? "social_transfers" : "uncategorized";
+
+    rows.push({
+      date,
+      description: describeActivity(subType, rawDescription),
+      amount: Math.abs(amount),
+      type,
+      pending: false,
+      rawText: lines[li].slice(0, 300),
+      category,
+    });
+  }
+
+  return rows;
+}
+
 export function applyMerchantRules(
   rows: ParsedRow[],
   rules: { matchText: string; category: string }[]
