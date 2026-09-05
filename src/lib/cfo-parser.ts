@@ -41,8 +41,104 @@ const NOISE_WORDS = [
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
+// Keyword → category guesses, built directly from a real activity history
+// (Vlad's, June–Sept 2026) rather than generic assumptions. Order matters:
+// earlier entries win when a description could match more than one (e.g.
+// "uber canada/uberonemem" — the One membership — must be checked before
+// the generic "uber" transport match). This runs automatically on every
+// parse; a saved merchant rule (from "always use this category") always
+// overrides it.
+const CATEGORY_KEYWORDS: { pattern: RegExp; category: string }[] = [
+  // Housing
+  { pattern: /cogir|rent/i, category: "housing" },
+
+  // Subscriptions (recurring software/media, not one-off purchases)
+  { pattern: /uberonemem/i, category: "subscriptions" },
+  { pattern: /apple\.com/i, category: "subscriptions" },
+  { pattern: /spotify/i, category: "subscriptions" },
+  { pattern: /netflix/i, category: "subscriptions" },
+
+  // Utilities & bills
+  { pattern: /videotron/i, category: "utilities" },
+  { pattern: /hydro/i, category: "utilities" },
+  { pattern: /\bsaaq\b/i, category: "utilities" },
+
+  // Business (tools, ad spend, event/ticketing platforms, agency-side income)
+  { pattern: /netlify/i, category: "business" },
+  { pattern: /godaddy/i, category: "business" },
+  { pattern: /anthropic/i, category: "business" },
+  { pattern: /laylo/i, category: "business" },
+  { pattern: /facebk|facebook ads|meta ads/i, category: "business" },
+  { pattern: /weezevent/i, category: "business" },
+  { pattern: /^zeffy/i, category: "business" },
+  { pattern: /pivot studio/i, category: "business" },
+  { pattern: /groupe plus/i, category: "business" },
+
+  // Fitness & training
+  { pattern: /anytime\s*fitn/i, category: "fitness" },
+  { pattern: /gym callisthenie|calisthenics gym/i, category: "fitness" },
+  { pattern: /academie d.?arts mart/i, category: "fitness" },
+
+  // Transport (transit, bike share, parking, rideshare rides — not the Uber One membership above)
+  { pattern: /\bbixi\b/i, category: "transport" },
+  { pattern: /agence de mobilite/i, category: "transport" },
+  { pattern: /uber.*trip|ubertrip/i, category: "transport" },
+  { pattern: /\bstm\b/i, category: "transport" },
+  { pattern: /honk parking/i, category: "transport" },
+  { pattern: /air-serv/i, category: "transport" },
+
+  // Gas
+  { pattern: /petro-?canada/i, category: "gas" },
+  { pattern: /\bshell\b/i, category: "gas" },
+  { pattern: /\bultramar\b/i, category: "gas" },
+  { pattern: /costco essence/i, category: "gas" },
+  { pattern: /harnois/i, category: "gas" },
+  { pattern: /gas bar/i, category: "gas" },
+  { pattern: /couche.?tard|couchetard/i, category: "gas" },
+  { pattern: /\besso\b/i, category: "gas" },
+
+  // Cafes
+  { pattern: /tim hortons/i, category: "cafes" },
+  { pattern: /starbucks|sbux/i, category: "cafes" },
+  { pattern: /\bcafe\b|caf[ée]/i, category: "cafes" },
+  { pattern: /presotea|brulerie|b\.hive|espresso bar|gong cha/i, category: "cafes" },
+
+  // Desserts
+  { pattern: /uncle tetsu|dairy queen|havre aux glaces|leche desserts|radikal dezzertz|patisserie|boulangerie|tarterie|krispy kreme|wow-gateaux|desserts etc|premiere moisson|creperie|creamerie|glaces\b/i, category: "desserts" },
+
+  // Groceries
+  { pattern: /marche adonis|adonis \d|\biga\b|\bmetro\b|\bmaxi\b|super c\b|costco wholesale|h-mart|provigo|marche |fruits de la|fruiterie|epicerie/i, category: "groceries" },
+
+  // Shopping & retail
+  { pattern: /dollarama|winners|homesense|marshalls|canadian tire|bureau en gros|best buy|michaels|indigo|wal-mart|walmart|sports experts|swarovski|zara\b|shein/i, category: "shopping" },
+  { pattern: /jean coutu|pharmaprix|uniprix/i, category: "shopping" },
+  { pattern: /fleuriste|fleur|florist/i, category: "shopping" },
+  { pattern: /barbershop|barber\b/i, category: "shopping" },
+
+  // Dining out (broad — checked after the more specific buckets above)
+  { pattern: /mcdonald|doner|kabab|shawarma|sushi|pizza|restaurant|bistro|falafel|poke|dumpling|burrito|grill|cuisine|onigiri|ramen|taco|burger|smash burger|chicken|wok|thali|qwelli|uber.*eats|ubereats|pretzel|^chez |wagyu|steak/i, category: "dining_out" },
+
+  // Payroll / regular income
+  { pattern: /paie\/payroll|direct deposit|^interest|promotional bonus|giveaway/i, category: "income" },
+
+  // Transfers between people / accounts
+  { pattern: /interac e-transfer|transfer (in|out)/i, category: "social_transfers" },
+];
+
+function guessCategory(description: string): string {
+  for (const { pattern, category } of CATEGORY_KEYWORDS) {
+    if (pattern.test(description)) return category;
+  }
+  return "uncategorized";
+}
+
 function stripNoise(text: string) {
   let cleaned = text.replace(/•/g, " ");
+  // Wealthsimple's feed runs words together with no space — "MontrealPurchaseChequing"
+  // — wherever one label ends and the next begins. Split on a lowercase→uppercase
+  // transition first so the noise-word matching below (which needs word boundaries)
+  // can actually find "Purchase", "Chequing", "Pending", etc. inside that run.
+  cleaned = cleaned.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   // Drop the account-type / relative-day fragment, e.g. "Chequing Day 2 Day"
   cleaned = cleaned.replace(/\bday\s*\d+\s*day\b/gi, " ");
   for (const w of NOISE_WORDS) {
@@ -80,7 +176,11 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
   let currentDate = today;
   let buffer: string[] = [];
 
-  const amountPattern = /([+\-−–])\s*\$\s*([\d,]+\.\d{2})/;
+  // Wealthsimple's activity feed doesn't always show a "+" on incoming
+  // money — a deposit or e-Transfer received often just reads "$500.00 CAD"
+  // with no sign at all, while every outgoing amount is prefixed with a
+  // minus/dash. So the sign is optional here, and its absence means income.
+  const amountPattern = /([+\-−–])?\s*\$\s*([\d,]+\.\d{2})/;
 
   function flush(pendingFlag: boolean) {
     if (buffer.length === 0) return;
@@ -94,7 +194,7 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
     const sign = match[1];
     const amount = Number(match[2].replace(/,/g, ""));
     if (!amount) return;
-    const type: ParsedRow["type"] = sign === "+" ? "INCOME" : "EXPENSE";
+    const type: ParsedRow["type"] = sign === "+" || !sign ? "INCOME" : "EXPENSE";
 
     const description = stripNoise(chunk.slice(0, match.index)) || stripNoise(chunk) || "Unknown";
 
@@ -105,7 +205,11 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
       type,
       pending: pendingFlag || /pending/i.test(chunk),
       rawText: chunk.trim().slice(0, 300),
-      category: "uncategorized",
+      // Guess against the raw chunk, not the noise-stripped description —
+      // stripping words like "e-transfer" independently can chop up a
+      // multi-word phrase ("Interac e-Transfer") before the category
+      // matcher gets to see it whole.
+      category: guessCategory(chunk),
     });
   }
 
@@ -150,14 +254,15 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
       const sign = match[1];
       const amount = Number(match[2].replace(/,/g, ""));
       if (!amount) continue;
+      const description = stripNoise(chunk.slice(0, match.index)).slice(0, 120) || "Unknown";
       rows.push({
         date: today.toISOString().slice(0, 10),
-        description: stripNoise(chunk.slice(0, match.index)).slice(0, 120) || "Unknown",
+        description,
         amount,
-        type: sign === "+" ? "INCOME" : "EXPENSE",
+        type: sign === "+" || !sign ? "INCOME" : "EXPENSE",
         pending: /pending/i.test(chunk),
         rawText: chunk.trim().slice(0, 300),
-        category: "uncategorized",
+        category: guessCategory(chunk),
       });
     }
   }
@@ -264,7 +369,11 @@ export function parseWealthsimpleCSV(raw: string): ParsedRow[] {
         ? "INCOME"
         : "EXPENSE";
 
-    const category = TRANSFER_SUB_TYPES.has(subType) ? "social_transfers" : "uncategorized";
+    const category = INCOME_SUB_TYPES.has(subType)
+      ? "income"
+      : TRANSFER_SUB_TYPES.has(subType)
+        ? "social_transfers"
+        : "uncategorized";
 
     rows.push({
       date,
