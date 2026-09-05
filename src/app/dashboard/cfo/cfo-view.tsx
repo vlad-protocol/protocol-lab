@@ -91,7 +91,14 @@ export function CFOView({
 
       <div className="mt-5">
         {tab === "overview" && (
-          <OverviewTab categories={categories} transactions={transactions} month={month} />
+          <OverviewTab
+            categories={categories}
+            transactions={transactions}
+            month={month}
+            onCategoryChange={(id, category) =>
+              setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, category } : t)))
+            }
+          />
         )}
         {tab === "add" && (
           <AddTab
