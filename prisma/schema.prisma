@@ -51,6 +51,12 @@ model User {
   meetingNotes      MeetingNote[]
   igAutomations     IGAutomation[]
   adCampaigns       AdCampaign[]
+  cfoTransactions   CFOTransaction[]
+  cfoBudgetCategories CFOBudgetCategory[]
+  cfoMerchantRules  CFOMerchantRule[]
+  cfoRecurringBills CFORecurringBill[]
+  cfoGoals          CFOGoal[]
+  cfoDebts          CFODebt[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -502,4 +508,97 @@ model AdCampaign {
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
+}
+
+// --- CFO (personal budget, cashflow, goals) --------------------------------
+// Entirely personal to whoever's using it — every model is scoped by userId,
+// unlike the CRM data above, since this is one person's bank activity, not
+// shared team data. No live bank connection: Wealthsimple (like most
+// Canadian banks) has no public API, so this works off pasting your activity
+// feed text in — see src/lib/cfo-parser.ts for how that's turned into rows.
+
+enum CFOTxnType {
+  INCOME
+  EXPENSE
+}
+
+model CFOTransaction {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime
+  description String
+  amount      Float // always positive; type carries the sign
+  type        CFOTxnType
+  category    String // matches a CFOBudgetCategory.key, or "uncategorized"
+  pending     Boolean    @default(false)
+  rawText     String? // original pasted line, kept for re-review if parsing was off
+  createdAt   DateTime   @default(now())
+
+  @@index([userId, date])
+  @@index([userId, category])
+}
+
+model CFOBudgetCategory {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key           String
+  label         String
+  monthlyBudget Float    @default(0)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, key])
+}
+
+// Merchant text → category, learned as you correct parsed transactions, so
+// next week's paste categorizes itself.
+model CFOMerchantRule {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchText String // lowercase substring matched against the transaction description
+  category  String
+  type      CFOTxnType @default(EXPENSE)
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, matchText])
+}
+
+model CFORecurringBill {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  amount     Float
+  dayOfMonth Int // 1-31, billed against the closest valid day for shorter months
+  category   String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, dayOfMonth])
+}
+
+model CFOGoal {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  targetAmount Float
+  savedSoFar   Float     @default(0)
+  targetDate   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model CFODebt {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  balance        Float
+  monthlyPayment Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

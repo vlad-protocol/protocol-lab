@@ -19,6 +19,7 @@ export const MODULES = [
   { key: "copilot", label: "Copilot (meeting notes)" },
   { key: "ads", label: "Ads" },
   { key: "ig_automations", label: "IG Automations" },
+  { key: "cfo", label: "CFO (personal budget)" },
   { key: "team", label: "Team & permissions (admin-only in practice)" },
 ] as const;
 

@@ -33,6 +33,18 @@ fight-camp schedule alongside the business.
   on/off checkbox per module. You (the owner) always have full access;
   employees only see what's checked. Changes take effect on their very
   next click, not their next login.
+- **CFO** (`/dashboard/cfo`) — your personal budget, spending, and cashflow
+  tracker. Wealthsimple (and every other bank) has no public API for personal
+  accounts, so there's no live sync — instead you copy your activity feed from
+  Wealthsimple and paste it into the "+ Add" tab, which parses it into
+  editable rows (date/description/amount/category) for you to review and
+  save. From there: an Overview tab with budget-by-category progress bars and
+  a month-end spending projection based on your pace so far; a full
+  searchable/filterable History of every transaction; a Calendar of your
+  recurring fixed bills showing what's paid vs. still due each month; and a
+  Goals & Debt tab to track savings goals and pay-down progress on debts.
+  Everything here is private to your own login — nobody else on the team
+  sees it.
 - **Training** (`/dashboard/training`) — your personal fight-camp schedule
   (Muay Thai / BJJ / strength / recovery), the full session library for
   every protocol referenced in the week, and the training principles behind
