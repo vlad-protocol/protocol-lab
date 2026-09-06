@@ -52,18 +52,14 @@ const CATEGORY_KEYWORDS: { pattern: RegExp; category: string }[] = [
   // Housing
   { pattern: /cogir|rent/i, category: "housing" },
 
-  // Subscriptions (recurring software/media, not one-off purchases)
-  { pattern: /uberonemem/i, category: "subscriptions" },
-  { pattern: /apple\.com/i, category: "subscriptions" },
-  { pattern: /spotify/i, category: "subscriptions" },
-  { pattern: /netflix/i, category: "subscriptions" },
+  // Income — payroll, interest, bonuses, and (per Vlad's own call) any
+  // "Groupe Plus inc" e-Transfer, which was payroll from a job he's since
+  // left, not ongoing agency revenue.
+  { pattern: /paie\/payroll|direct deposit|^interest|promotional bonus|giveaway/i, category: "income" },
+  { pattern: /groupe plus/i, category: "income" },
 
-  // Utilities & bills
-  { pattern: /videotron/i, category: "utilities" },
-  { pattern: /hydro/i, category: "utilities" },
-  { pattern: /\bsaaq\b/i, category: "utilities" },
-
-  // Business (tools, ad spend, event/ticketing platforms, agency-side income)
+  // Business (tools, ad spend, event/ticketing platform revenue — Zeffy is
+  // confirmed fitness/events business revenue, not personal)
   { pattern: /netlify/i, category: "business" },
   { pattern: /godaddy/i, category: "business" },
   { pattern: /anthropic/i, category: "business" },
@@ -72,73 +68,101 @@ const CATEGORY_KEYWORDS: { pattern: RegExp; category: string }[] = [
   { pattern: /weezevent/i, category: "business" },
   { pattern: /^zeffy/i, category: "business" },
   { pattern: /pivot studio/i, category: "business" },
-  { pattern: /groupe plus/i, category: "business" },
+  { pattern: /allo velo/i, category: "business" },
+  { pattern: /conceptdel/i, category: "business" },
 
-  // Fitness & training
-  { pattern: /anytime\s*fitn/i, category: "fitness" },
-  { pattern: /gym callisthenie|calisthenics gym/i, category: "fitness" },
-  { pattern: /academie d.?arts mart/i, category: "fitness" },
+  // Bills & Debt (recurring subscriptions, utilities, and loan/CC payments
+  // all land in one bucket to keep the category list short)
+  { pattern: /uberonemem/i, category: "bills_debt" },
+  { pattern: /apple\.com/i, category: "bills_debt" },
+  { pattern: /spotify/i, category: "bills_debt" },
+  { pattern: /netflix/i, category: "bills_debt" },
+  { pattern: /videotron/i, category: "bills_debt" },
+  { pattern: /hydro/i, category: "bills_debt" },
+  { pattern: /\bsaaq\b/i, category: "bills_debt" },
 
-  // Transport (transit, bike share, parking, rideshare rides — not the Uber One membership above)
+  // Transport & Gas (transit, bike share, parking, rideshare rides, fuel —
+  // merged into one bucket)
   { pattern: /\bbixi\b/i, category: "transport" },
   { pattern: /agence de mobilite/i, category: "transport" },
   { pattern: /uber.*trip|ubertrip/i, category: "transport" },
   { pattern: /\bstm\b/i, category: "transport" },
   { pattern: /honk parking/i, category: "transport" },
   { pattern: /air-serv/i, category: "transport" },
+  { pattern: /petro-?canada/i, category: "transport" },
+  { pattern: /\bshell\b/i, category: "transport" },
+  { pattern: /\bultramar\b/i, category: "transport" },
+  { pattern: /costco essence/i, category: "transport" },
+  { pattern: /harnois/i, category: "transport" },
+  { pattern: /gas bar/i, category: "transport" },
+  { pattern: /couche.?tard|couchetard/i, category: "transport" },
+  { pattern: /\besso\b/i, category: "transport" },
 
-  // Gas
-  { pattern: /petro-?canada/i, category: "gas" },
-  { pattern: /\bshell\b/i, category: "gas" },
-  { pattern: /\bultramar\b/i, category: "gas" },
-  { pattern: /costco essence/i, category: "gas" },
-  { pattern: /harnois/i, category: "gas" },
-  { pattern: /gas bar/i, category: "gas" },
-  { pattern: /couche.?tard|couchetard/i, category: "gas" },
-  { pattern: /\besso\b/i, category: "gas" },
-
-  // Cafes
-  { pattern: /tim hortons/i, category: "cafes" },
-  { pattern: /starbucks|sbux/i, category: "cafes" },
-  { pattern: /\bcafe\b|caf[ée]/i, category: "cafes" },
-  { pattern: /presotea|brulerie|b\.hive|espresso bar|gong cha/i, category: "cafes" },
-
-  // Desserts
-  { pattern: /uncle tetsu|dairy queen|havre aux glaces|leche desserts|radikal dezzertz|patisserie|boulangerie|tarterie|krispy kreme|wow-gateaux|desserts etc|premiere moisson|creperie|creamerie|glaces\b/i, category: "desserts" },
+  // Dining & Cafes (restaurants, cafes, and desserts merged into one bucket)
+  { pattern: /tim hortons/i, category: "dining_cafes" },
+  { pattern: /starbucks|sbux/i, category: "dining_cafes" },
+  { pattern: /\bcafe\b|caf[ée]/i, category: "dining_cafes" },
+  { pattern: /presotea|brulerie|b\.hive|espresso bar|gong cha/i, category: "dining_cafes" },
+  { pattern: /uncle tetsu|dairy queen|havre aux glaces|leche desserts|radikal dezzertz|patisserie|boulangerie|tarterie|krispy kreme|wow-gateaux|desserts etc|premiere moisson|creperie|creamerie|glaces?\b|pistachio/i, category: "dining_cafes" },
+  { pattern: /mcdonald|doner|kabab|shawarma|sushi|pizza|pizzeria|restaurant|bistro|falafel|poke|dumpling|burrito|grill|cuisine|onigiri|ramen|taco|burger|smash burger|chicken|\bpoulet\b|wok|thali|qwelli|uber.*eats|ubereats|pretzel|\bchez\b|wagyu|steak|fondue|\bpie\b|homers|booster juice|\bcoffe|\bbasha\b|lounge|chateau maneki|smoke meat|fucaccia|sep lai|mangedansmonhood|patati patata|mano figa|rock n roll house|le petit sao|bete a pain|\bpies\b/i, category: "dining_cafes" },
 
   // Groceries
   { pattern: /marche adonis|adonis \d|\biga\b|\bmetro\b|\bmaxi\b|super c\b|costco wholesale|h-mart|provigo|marche |fruits de la|fruiterie|epicerie/i, category: "groceries" },
 
-  // Shopping & retail
-  { pattern: /dollarama|winners|homesense|marshalls|canadian tire|bureau en gros|best buy|michaels|indigo|wal-mart|walmart|sports experts|swarovski|zara\b|shein/i, category: "shopping" },
-  { pattern: /jean coutu|pharmaprix|uniprix/i, category: "shopping" },
-  { pattern: /fleuriste|fleur|florist/i, category: "shopping" },
-  { pattern: /barbershop|barber\b/i, category: "shopping" },
-
-  // Dining out (broad — checked after the more specific buckets above)
-  { pattern: /mcdonald|doner|kabab|shawarma|sushi|pizza|restaurant|bistro|falafel|poke|dumpling|burrito|grill|cuisine|onigiri|ramen|taco|burger|smash burger|chicken|wok|thali|qwelli|uber.*eats|ubereats|pretzel|^chez |wagyu|steak/i, category: "dining_out" },
-
-  // Payroll / regular income
-  { pattern: /paie\/payroll|direct deposit|^interest|promotional bonus|giveaway/i, category: "income" },
-
-  // Transfers between people / accounts
-  { pattern: /interac e-transfer|transfer (in|out)/i, category: "social_transfers" },
+  // Everything Else (retail/shopping, pharmacy, florist, personal care,
+  // fitness, pet stores, festivals/events, and the personal side of Interac
+  // transfers all land here — kept broad on purpose so the category list
+  // stays short)
+  { pattern: /dollarama|winners|homesense|marshalls|canadian tire|bureau en gros|best buy|michaels|indigo|wal-mart|walmart|sports experts|swarovski|zara\b|shein/i, category: "other" },
+  { pattern: /jean coutu|pharmaprix|uniprix/i, category: "other" },
+  { pattern: /fleuriste|fleur|florist/i, category: "other" },
+  { pattern: /barbershop|barber\b/i, category: "other" },
+  { pattern: /anytime\s*fitn/i, category: "other" },
+  { pattern: /gym callisthenie|calisthenics gym/i, category: "other" },
+  { pattern: /academie d.?arts mart/i, category: "other" },
+  { pattern: /provi-?soir|\bvoisin\b/i, category: "other" },
+  { pattern: /mondou|apollo indoor dog/i, category: "other" },
+  { pattern: /sqdc/i, category: "other" },
+  { pattern: /manoir saint sauveur/i, category: "other" },
+  { pattern: /fest_int_jazz|festival aloha|\bmutek\b/i, category: "other" },
+  { pattern: /lave auto/i, category: "transport" },
+  { pattern: /u-haul/i, category: "other" },
+  { pattern: /14345134 canada|9360-9998 quebec/i, category: "other" },
 ];
 
-function guessCategory(description: string): string {
+// Money moving between accounts/people is handled separately from the
+// keyword table above because the right category depends on direction, not
+// just the words in the description: an incoming Interac e-Transfer or bank
+// transfer (from TD, from Wealthsimple's own "Transfer in", from a client)
+// is treated as income for budgeting purposes per Vlad's own call, while
+// money sent OUT to another person (splitting a bill, a gift) is personal,
+// not a bill — that lands in "Everything Else" rather than a bucket of its
+// own, to keep the category list short.
+const TRANSFER_PATTERN = /interac e-transfer|transfer (in|out)/i;
+
+// Wealthsimple's feed runs words together with no space — "MontrealPurchaseChequing",
+// "PouletPurchase" — wherever one label ends and the next begins. Splitting on a
+// lowercase/digit→uppercase transition recovers word boundaries so both the
+// noise-word stripping below and the \b-anchored category patterns above can
+// actually match text that's glued to a trailing "Purchase"/"Chequing"/etc.
+function splitRuns(text: string): string {
+  return text.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+}
+
+function guessCategory(description: string, type: "INCOME" | "EXPENSE" = "EXPENSE"): string {
+  const spaced = splitRuns(description);
   for (const { pattern, category } of CATEGORY_KEYWORDS) {
-    if (pattern.test(description)) return category;
+    if (pattern.test(spaced)) return category;
+  }
+  if (TRANSFER_PATTERN.test(spaced)) {
+    return type === "INCOME" ? "income" : "other";
   }
   return "uncategorized";
 }
 
 function stripNoise(text: string) {
   let cleaned = text.replace(/•/g, " ");
-  // Wealthsimple's feed runs words together with no space — "MontrealPurchaseChequing"
-  // — wherever one label ends and the next begins. Split on a lowercase→uppercase
-  // transition first so the noise-word matching below (which needs word boundaries)
-  // can actually find "Purchase", "Chequing", "Pending", etc. inside that run.
-  cleaned = cleaned.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  cleaned = splitRuns(cleaned);
   // Drop the account-type / relative-day fragment, e.g. "Chequing Day 2 Day"
   cleaned = cleaned.replace(/\bday\s*\d+\s*day\b/gi, " ");
   for (const w of NOISE_WORDS) {
@@ -209,7 +233,7 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
       // stripping words like "e-transfer" independently can chop up a
       // multi-word phrase ("Interac e-Transfer") before the category
       // matcher gets to see it whole.
-      category: guessCategory(chunk),
+      category: guessCategory(chunk, type),
     });
   }
 
@@ -255,14 +279,15 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
       const amount = Number(match[2].replace(/,/g, ""));
       if (!amount) continue;
       const description = stripNoise(chunk.slice(0, match.index)).slice(0, 120) || "Unknown";
+      const fallbackType: ParsedRow["type"] = sign === "+" || !sign ? "INCOME" : "EXPENSE";
       rows.push({
         date: today.toISOString().slice(0, 10),
         description,
         amount,
-        type: sign === "+" || !sign ? "INCOME" : "EXPENSE",
+        type: fallbackType,
         pending: /pending/i.test(chunk),
         rawText: chunk.trim().slice(0, 300),
-        category: guessCategory(chunk),
+        category: guessCategory(chunk, fallbackType),
       });
     }
   }
@@ -369,10 +394,15 @@ export function parseWealthsimpleCSV(raw: string): ParsedRow[] {
         ? "INCOME"
         : "EXPENSE";
 
+    // An incoming transfer (from TD, from Wealthsimple's own "Transfer in",
+    // an e-Transfer received) counts as income for budgeting; only money
+    // sent OUT to another person/account is a personal transfer expense.
     const category = INCOME_SUB_TYPES.has(subType)
       ? "income"
       : TRANSFER_SUB_TYPES.has(subType)
-        ? "social_transfers"
+        ? type === "INCOME"
+          ? "income"
+          : "other"
         : "uncategorized";
 
     rows.push({

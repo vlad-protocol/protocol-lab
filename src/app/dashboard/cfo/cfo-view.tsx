@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { LayoutGrid, PlusCircle, History, CalendarDays, Target } from "lucide-react";
+import { LayoutGrid, PlusCircle, History, CalendarDays, Target, MessageCircle } from "lucide-react";
 import type { Bill, Category, Debt, Goal, Transaction } from "./types";
 import { OverviewTab } from "./overview-tab";
 import { AddTab } from "./add-tab";
 import { HistoryTab } from "./history-tab";
 import { CalendarTab } from "./calendar-tab";
 import { GoalsTab } from "./goals-tab";
+import { ChatTab } from "./chat-tab";
 
-type Tab = "overview" | "add" | "history" | "calendar" | "goals";
+type Tab = "overview" | "add" | "history" | "calendar" | "goals" | "chat";
 
 const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
@@ -17,6 +18,7 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "history", label: "History", icon: History },
   { key: "calendar", label: "Calendar", icon: CalendarDays },
   { key: "goals", label: "Goals & Debt", icon: Target },
+  { key: "chat", label: "CFO Chat", icon: MessageCircle },
 ];
 
 function currentMonthKey() {
@@ -38,7 +40,7 @@ export function CFOView({
   initialDebts: Debt[];
 }) {
   const [tab, setTab] = useState<Tab>("overview");
-  const [categories] = useState(initialCategories);
+  const [categories, setCategories] = useState(initialCategories);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [bills, setBills] = useState(initialBills);
   const [goals, setGoals] = useState(initialGoals);
@@ -98,6 +100,9 @@ export function CFOView({
             onCategoryChange={(id, category) =>
               setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, category } : t)))
             }
+            onBudgetChange={(id, monthlyBudget) =>
+              setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, monthlyBudget } : c)))
+            }
           />
         )}
         {tab === "add" && (
@@ -134,6 +139,9 @@ export function CFOView({
             onDebtUpdated={(d) => setDebts((prev) => prev.map((x) => (x.id === d.id ? d : x)))}
             onDebtDeleted={(id) => setDebts((prev) => prev.filter((d) => d.id !== id))}
           />
+        )}
+        {tab === "chat" && (
+          <ChatTab categories={categories} transactions={transactions} goals={goals} debts={debts} />
         )}
       </div>
     </div>

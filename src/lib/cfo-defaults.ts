@@ -1,22 +1,32 @@
-// Starter category set — built from your actual Wealthsimple activity
-// history (June–September 2026), so it matches your real spending shape
-// instead of a generic template. Budgets start at $0 for you to fill in.
-// Nothing here is fixed: rename, delete, or add categories freely.
+// Kept deliberately short — 8 categories, chosen so the list stays scannable
+// at a glance instead of scrolling through a dozen fine-grained buckets.
+// Budgets start at $0 for you to fill in. Rename, delete, or add categories
+// freely; if you add fine-grained ones later you can always re-run the
+// simplification logic in cfo-server.ts by hand.
 export const DEFAULT_CFO_CATEGORIES: { key: string; label: string }[] = [
   { key: "housing", label: "Housing" },
   { key: "groceries", label: "Groceries" },
-  { key: "dining_out", label: "Dining Out" },
-  { key: "cafes", label: "Cafes" },
-  { key: "desserts", label: "Desserts" },
-  { key: "gas", label: "Gas" },
-  { key: "transport", label: "Transport (Bixi, transit, parking, rideshare)" },
-  { key: "fitness", label: "Fitness & Training" },
-  { key: "shopping", label: "Shopping & Retail" },
-  { key: "subscriptions", label: "Subscriptions" },
-  { key: "utilities", label: "Utilities & Bills" },
-  { key: "debt", label: "Debt Payments" },
-  { key: "social_transfers", label: "Social / Transfers" },
+  { key: "dining_cafes", label: "Dining & Cafes" },
+  { key: "transport", label: "Transport & Gas" },
+  { key: "bills_debt", label: "Bills & Debt" },
   { key: "business", label: "Business" },
-  { key: "income", label: "Income (payroll, interest, bonuses)" },
-  { key: "other", label: "Other" },
+  { key: "income", label: "Income" },
+  { key: "other", label: "Everything Else" },
 ];
+
+// A one-time consolidation map from the earlier 15-category set down to the
+// 8 above. Keys not listed here (the 8 canonical ones, plus "uncategorized")
+// are left as-is. Used by cfo-server.ts to migrate existing accounts
+// automatically the next time their CFO page loads — no manual step needed.
+export const CATEGORY_MERGE_MAP: Record<string, string> = {
+  dining_out: "dining_cafes",
+  cafes: "dining_cafes",
+  desserts: "dining_cafes",
+  gas: "transport",
+  subscriptions: "bills_debt",
+  utilities: "bills_debt",
+  debt: "bills_debt",
+  shopping: "other",
+  fitness: "other",
+  social_transfers: "other",
+};

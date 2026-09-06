@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import type { Category, Transaction } from "./types";
 import { money } from "./types";
+import { RAMIT_BUDGET_PLAN } from "@/lib/cfo-budget-plan";
 
 function statusColor(pct: number) {
   if (pct >= 100) return "bg-red-500";
@@ -42,14 +43,19 @@ export function OverviewTab({
   transactions,
   month,
   onCategoryChange,
+  onBudgetChange,
 }: {
   categories: Category[];
   transactions: Transaction[];
   month: string; // "YYYY-MM"
   onCategoryChange: (id: string, category: string) => void;
+  onBudgetChange: (id: string, monthlyBudget: number) => void;
 }) {
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, string>>({});
+  const [applyingPlan, setApplyingPlan] = useState(false);
+  const [showPlanNotes, setShowPlanNotes] = useState(false);
 
   const stats = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -110,6 +116,28 @@ export function OverviewTab({
     if (res.ok) onCategoryChange(id, category);
   }
 
+  async function saveBudget(id: string, monthlyBudget: number) {
+    setSavingId(id);
+    const res = await fetch(`/api/cfo/categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ monthlyBudget }),
+    });
+    setSavingId(null);
+    if (res.ok) onBudgetChange(id, monthlyBudget);
+  }
+
+  async function applyRecommendedBudget() {
+    setApplyingPlan(true);
+    for (const cat of categories) {
+      const target = RAMIT_BUDGET_PLAN.categoryBudgets[cat.key];
+      if (target === undefined) continue;
+      await saveBudget(cat.id, target);
+    }
+    setApplyingPlan(false);
+    setShowPlanNotes(true);
+  }
+
   return (
     <div>
       <div className="grid gap-3 sm:grid-cols-4">
@@ -143,9 +171,38 @@ export function OverviewTab({
         </div>
       </div>
 
+      <div className="mt-6 rounded-xl border border-[var(--hq-accent)]/30 bg-[var(--hq-accent)]/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--hq-text)]">
+              <Sparkles className="h-4 w-4 text-[var(--hq-accent)]" /> Recommended budget (Conscious Spending Plan)
+            </h3>
+            <p className="mt-0.5 text-xs text-[var(--hq-text-muted)]">
+              Built from your real 3-month history, your ~$950/mo rent, and paying off your $400 card — based on the
+              framework in <em>I Will Teach You to Be Rich</em>.
+            </p>
+          </div>
+          <button
+            onClick={applyRecommendedBudget}
+            disabled={applyingPlan}
+            className="rounded-lg bg-[var(--hq-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+          >
+            {applyingPlan ? "Applying…" : "Apply this budget"}
+          </button>
+        </div>
+        {showPlanNotes && (
+          <ul className="mt-3 flex flex-col gap-1 text-xs text-[var(--hq-text-muted)]">
+            {RAMIT_BUDGET_PLAN.notes.map((n, i) => (
+              <li key={i}>• {n}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <h3 className="mt-6 text-sm font-semibold text-[var(--hq-text)]">Budget by category</h3>
       <p className="mt-0.5 text-xs text-[var(--hq-text-muted)]">
-        Click a category to see its transactions this month — you can recategorize any of them right there.
+        Click a category to see its transactions this month and recategorize any of them right there. Edit the
+        budget number directly — it saves when you click away.
       </p>
       <div className="mt-2 flex flex-col gap-2.5">
         {categories.map((cat) => {
@@ -153,37 +210,62 @@ export function OverviewTab({
           const pct = cat.monthlyBudget > 0 ? Math.min(150, (spent / cat.monthlyBudget) * 100) : spent > 0 ? 100 : 0;
           const isOpen = openCategory === cat.key;
           const catTransactions = stats.transactionsByCategory.get(cat.key) || [];
+          const draft = budgetDraft[cat.id];
           return (
             <div key={cat.id} className="rounded-lg border border-[var(--hq-card-border)] bg-white">
-              <button
-                onClick={() => setOpenCategory(isOpen ? null : cat.key)}
-                className="flex w-full items-center gap-2 p-3 text-left"
-              >
-                {isOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-[var(--hq-text)]">
-                      {cat.label}
-                      {catTransactions.length > 0 && (
-                        <span className="ml-1.5 text-[var(--hq-text-muted)]">({catTransactions.length})</span>
-                      )}
-                    </span>
-                    <span className="text-[var(--hq-text-muted)]">
-                      {money(spent)} / {cat.monthlyBudget > 0 ? money(cat.monthlyBudget) : "no budget set"}
-                    </span>
+              <div className="flex w-full items-center gap-2 p-3 text-left">
+                <button
+                  onClick={() => setOpenCategory(isOpen ? null : cat.key)}
+                  className="flex flex-1 items-center gap-2 text-left"
+                >
+                  {isOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
+                  )}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-[var(--hq-text)]">
+                        {cat.label}
+                        {catTransactions.length > 0 && (
+                          <span className="ml-1.5 text-[var(--hq-text-muted)]">({catTransactions.length})</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--hq-canvas)]">
+                      <div
+                        className={`h-full rounded-full ${statusColor(pct)}`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--hq-canvas)]">
-                    <div
-                      className={`h-full rounded-full ${statusColor(pct)}`}
-                      style={{ width: `${Math.min(100, pct)}%` }}
+                </button>
+                <div className="flex flex-shrink-0 items-center gap-1 text-xs text-[var(--hq-text-muted)]">
+                  <span>{money(spent)} /</span>
+                  <span className="flex items-center gap-0.5">
+                    $
+                    <input
+                      type="number"
+                      min={0}
+                      value={draft !== undefined ? draft : cat.monthlyBudget || ""}
+                      placeholder="0"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setBudgetDraft((d) => ({ ...d, [cat.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        const next = Number(e.target.value) || 0;
+                        setBudgetDraft((d) => {
+                          const rest = { ...d };
+                          delete rest[cat.id];
+                          return rest;
+                        });
+                        if (next !== cat.monthlyBudget) saveBudget(cat.id, next);
+                      }}
+                      className="w-16 rounded border border-[var(--hq-card-border)] bg-white px-1 py-0.5 text-right text-xs"
                     />
-                  </div>
+                  </span>
+                  {savingId === cat.id && <span>saving…</span>}
                 </div>
-              </button>
+              </div>
               {isOpen && (
                 <div className="border-t border-[var(--hq-card-border)] px-3 py-2">
                   {catTransactions.length === 0 ? (
@@ -222,7 +304,7 @@ export function OverviewTab({
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span>
-            At your current pace ({stats.daysElapsed}/{stats.daysInMonth} days in), you're on track to spend{" "}
+            At your current pace ({stats.daysElapsed}/{stats.daysInMonth} days in), you&apos;re on track to spend{" "}
             {money(stats.projected)} this month against a {money(totalBudget)} budget.
           </span>
         </div>
