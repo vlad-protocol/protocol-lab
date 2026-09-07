@@ -40,6 +40,20 @@ const NOISE_WORDS = [
 ];
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const MONTH_NAMES = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
 
 // Keyword → category guesses, built directly from a real activity history
 // (Vlad's, June–Sept 2026) rather than generic assumptions. Order matters:
@@ -199,9 +213,23 @@ function resolveDateContext(headerText: string, today: Date): Date | null {
     d.setDate(d.getDate() - diff);
     return d;
   }
-  // "Apr 24", "April 24", "Apr 24, 2026"
-  const parsed = new Date(`${headerText} ${today.getFullYear()}`);
-  if (!Number.isNaN(parsed.getTime())) return parsed;
+  // "Apr 24", "April 24", "Apr 24, 2026" — hand-matched against a real
+  // month name/abbreviation rather than handed to `new Date(...)`. JS's
+  // Date constructor is dangerously lenient with free-form strings: it
+  // parses "Purchase 2026" as Jan 1 2026, and "Marche Adonis 2026" as
+  // Mar 1 2026 (matching the "Mar" prefix inside "Marche") — which was
+  // silently swallowing plain merchant-name lines as fake date headers
+  // whenever a transaction's fields each landed on their own line.
+  const m = t.match(/^([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?$/);
+  if (m) {
+    const word = m[1];
+    const day = Number(m[2]);
+    const year = m[3] ? Number(m[3]) : today.getFullYear();
+    const monthIdx = word.length >= 3 ? MONTH_NAMES.findIndex((full) => full.startsWith(word)) : -1;
+    if (monthIdx !== -1 && day >= 1 && day <= 31) {
+      return new Date(year, monthIdx, day);
+    }
+  }
   return null;
 }
 
