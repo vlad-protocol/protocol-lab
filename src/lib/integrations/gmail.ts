@@ -122,6 +122,132 @@ export function extractEmailAddress(headerValue: string): string | null {
   return trimmed.includes("@") ? trimmed : null;
 }
 
+export type GmailFullMessage = {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  date: string;
+  messageIdHeader: string;
+  references: string;
+  html: string | null;
+  text: string | null;
+  unread: boolean;
+};
+
+type GmailPart = {
+  mimeType?: string | null;
+  body?: { data?: string | null } | null;
+  parts?: GmailPart[] | null;
+};
+
+function decodeBase64Url(data: string) {
+  return Buffer.from(data, "base64url").toString("utf-8");
+}
+
+// Gmail bodies are a tree of multipart/alternative and multipart/mixed
+// parts (plus attachments mixed in) — walk it and grab the first
+// text/html and text/plain leaf we find, which is what every mail client
+// does for "the" body of a message.
+function extractBodies(payload?: GmailPart | null): { html: string | null; text: string | null } {
+  let html: string | null = null;
+  let text: string | null = null;
+  function walk(part?: GmailPart | null) {
+    if (!part) return;
+    const mime = part.mimeType || "";
+    if (mime === "text/html" && part.body?.data && !html) {
+      html = decodeBase64Url(part.body.data);
+    } else if (mime === "text/plain" && part.body?.data && !text) {
+      text = decodeBase64Url(part.body.data);
+    }
+    part.parts?.forEach(walk);
+  }
+  walk(payload);
+  return { html, text };
+}
+
+export async function getGmailMessage(userId: string, id: string): Promise<GmailFullMessage> {
+  const client = await getClientForUser(userId);
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+  const headers = msg.data.payload?.headers || [];
+  const header = (name: string) =>
+    headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+  const { html, text } = extractBodies(msg.data.payload as GmailPart | undefined);
+
+  return {
+    id: msg.data.id as string,
+    threadId: (msg.data.threadId || "") as string,
+    from: header("From"),
+    to: header("To"),
+    cc: header("Cc"),
+    subject: header("Subject"),
+    date: header("Date"),
+    messageIdHeader: header("Message-ID") || header("Message-Id"),
+    references: header("References"),
+    html,
+    text,
+    unread: (msg.data.labelIds || []).includes("UNREAD"),
+  };
+}
+
+export async function markGmailRead(userId: string, id: string) {
+  const client = await getClientForUser(userId);
+  const gmail = google.gmail({ version: "v1", auth: client });
+  await gmail.users.messages.modify({ userId: "me", id, requestBody: { removeLabelIds: ["UNREAD"] } });
+}
+
+function buildRawReply(opts: {
+  to: string;
+  cc?: string;
+  from: string;
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  references?: string;
+}) {
+  const lines = [
+    `To: ${opts.to}`,
+    opts.cc ? `Cc: ${opts.cc}` : null,
+    `From: ${opts.from}`,
+    `Subject: ${opts.subject}`,
+    opts.inReplyTo ? `In-Reply-To: ${opts.inReplyTo}` : null,
+    opts.references ? `References: ${opts.references}` : null,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    opts.body,
+  ].filter((l): l is string => l !== null);
+  return Buffer.from(lines.join("\n")).toString("base64url");
+}
+
+// Like sendGmail, but for replying/forwarding within an existing thread —
+// carries the threading headers so Gmail (and the recipient's client)
+// groups it with the original conversation instead of starting a new one.
+export async function sendGmailReply(
+  userId: string,
+  opts: {
+    to: string;
+    cc?: string;
+    subject: string;
+    body: string;
+    threadId?: string;
+    inReplyTo?: string;
+    references?: string;
+  }
+) {
+  const client = await getClientForUser(userId);
+  const conn = await prisma.gmailConnection.findUnique({ where: { userId } });
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const raw = buildRawReply({ ...opts, from: conn!.email });
+  const res = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw, threadId: opts.threadId },
+  });
+  return res.data.id as string;
+}
+
 export async function listGmailInbox(userId: string, maxResults = 25): Promise<GmailInboxMessage[]> {
   const client = await getClientForUser(userId);
   const gmail = google.gmail({ version: "v1", auth: client });

@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
 import { sendGmail } from "@/lib/integrations/gmail";
+import { findOrCreateContactByEmail } from "@/lib/crm-contact";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -29,24 +30,7 @@ export async function POST(req: Request) {
   // Sending from the general Mail page (not a contact's page) won't have a
   // contactId — find an existing CRM contact by email, or create a new lead
   // for them, so the send still shows up in that contact's timeline.
-  let contactId = rawContactId;
-  if (!contactId) {
-    const existing = await prisma.contact.findFirst({
-      where: { email: { equals: to, mode: "insensitive" } },
-    });
-    if (existing) {
-      contactId = existing.id;
-    } else {
-      const created = await prisma.contact.create({
-        data: {
-          contactName: to.split("@")[0],
-          email: to,
-          createdById: session.user.id,
-        },
-      });
-      contactId = created.id;
-    }
-  }
+  const contactId = rawContactId || (await findOrCreateContactByEmail(to, session.user.id));
 
   let externalId: string | null = null;
 
