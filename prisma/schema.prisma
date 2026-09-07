@@ -32,31 +32,31 @@ model User {
   invitedUsers User[]   @relation("Invites")
   createdAt    DateTime @default(now())
 
-  reels             Reel[]
-  stats             WeeklyStat[]
-  contactsAssigned  Contact[]      @relation("AssignedRep")
-  contactsCreated   Contact[]      @relation("CreatedBy")
-  interactions      Interaction[]
-  automations       Automation[]
-  emailTemplates    EmailTemplate[]
-  gmailConnection   GmailConnection?
-  trainingCheckIns  TrainingCheckIn[]
-  shootCards        ShootCard[]
-  labEntries        StudioEntry[]
-  brainEntries      BrainEntry[]
-  calendarEvents    CalendarEvent[]
-  availabilities    Availability[]
-  docs              DocRecord[]
-  recordings        Recording[]
-  meetingNotes      MeetingNote[]
-  igAutomations     IGAutomation[]
-  adCampaigns       AdCampaign[]
-  cfoTransactions   CFOTransaction[]
+  reels               Reel[]
+  stats               WeeklyStat[]
+  contactsAssigned    Contact[]           @relation("AssignedRep")
+  contactsCreated     Contact[]           @relation("CreatedBy")
+  interactions        Interaction[]
+  automations         Automation[]
+  emailTemplates      EmailTemplate[]
+  gmailConnection     GmailConnection?
+  trainingCheckIns    TrainingCheckIn[]
+  shootCards          ShootCard[]
+  labEntries          StudioEntry[]
+  brainEntries        BrainEntry[]
+  calendarEvents      CalendarEvent[]
+  availabilities      Availability[]
+  docs                DocRecord[]
+  recordings          Recording[]
+  meetingNotes        MeetingNote[]
+  igAutomations       IGAutomation[]
+  adCampaigns         AdCampaign[]
+  cfoTransactions     CFOTransaction[]
   cfoBudgetCategories CFOBudgetCategory[]
-  cfoMerchantRules  CFOMerchantRule[]
-  cfoRecurringBills CFORecurringBill[]
-  cfoGoals          CFOGoal[]
-  cfoDebts          CFODebt[]
+  cfoMerchantRules    CFOMerchantRule[]
+  cfoRecurringBills   CFORecurringBill[]
+  cfoGoals            CFOGoal[]
+  cfoDebts            CFODebt[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -114,14 +114,14 @@ model Contact {
   createdBy     User?         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt     DateTime      @default(now())
 
-  interactions Interaction[]
-  shootCards   ShootCard[]
-  labEntries   StudioEntry[]
+  interactions   Interaction[]
+  shootCards     ShootCard[]
+  labEntries     StudioEntry[]
   calendarEvents CalendarEvent[]
-  docs         DocRecord[]
-  recordings   Recording[]
-  meetingNotes MeetingNote[]
-  adCampaigns  AdCampaign[]
+  docs           DocRecord[]
+  recordings     Recording[]
+  meetingNotes   MeetingNote[]
+  adCampaigns    AdCampaign[]
 
   @@index([email])
   @@index([phone])
@@ -140,11 +140,11 @@ enum InteractionDirection {
 }
 
 model Interaction {
-  id              String                @id @default(cuid())
+  id              String               @id @default(cuid())
   contactId       String
-  contact         Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact         Contact              @relation(fields: [contactId], references: [id], onDelete: Cascade)
   userId          String? // rep who sent/handled it, null for pure inbound auto-logged
-  user            User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user            User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   type            InteractionType
   direction       InteractionDirection
   subject         String?
@@ -155,8 +155,8 @@ model Interaction {
   durationSeconds Int?
   recordingUrl    String?
   externalId      String? // Gmail message id / Twilio call or message sid, for de-duping syncs
-  occurredAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
+  occurredAt      DateTime             @default(now())
+  createdAt       DateTime             @default(now())
 
   @@index([contactId, occurredAt])
   @@index([externalId])
@@ -181,9 +181,9 @@ model Automation {
   id            String            @id @default(cuid())
   name          String
   triggerType   AutomationTrigger
-  triggerConfig Json @default("{}")
+  triggerConfig Json              @default("{}")
   actionType    AutomationAction
-  actionConfig  Json @default("{}")
+  actionConfig  Json              @default("{}")
   enabled       Boolean           @default(true)
   createdById   String?
   createdBy     User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -445,17 +445,17 @@ model Recording {
 // connected — this is the structured-notes half of that working today.
 
 model MeetingNote {
-  id           String   @id @default(cuid())
-  title        String
-  contactId    String?
-  contact      Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  transcript   String?
-  summary      String?
-  decisions    String?
-  actionItems  String?
-  createdById  String?
-  createdBy    User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  title       String
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  transcript  String?
+  summary     String?
+  decisions   String?
+  actionItems String?
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
 }
 
 // --- IG Automations ---------------------------------------------------
@@ -601,4 +601,72 @@ model CFODebt {
   monthlyPayment Float
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+// --- Protocol CRM ----------------------------------------------------------
+// A dedicated sponsor/venue partnership pipeline for the Protocol events
+// business — modeled directly on the "Protocol-Sales-Tracker" spreadsheet
+// (Pipeline tab + Dashboard tab). Shared team-wide (like Contact/People),
+// not scoped to one user — Vlad, Marwa, and reps all work the same board.
+
+enum ProtocolLeadType {
+  SPONSOR
+  VENUE
+}
+
+enum ProtocolLeadStatus {
+  NEW
+  CONTACTED
+  QUALIFYING
+  PROPOSAL_SENT
+  NEGOTIATING
+  FOLLOW_UP_SCHEDULED
+  WON
+  LOST
+  ON_HOLD
+}
+
+enum ProtocolLeadPriority {
+  HOT
+  WARM
+  COLD
+}
+
+model ProtocolLead {
+  id     String @id @default(cuid())
+  number Int    @unique @default(autoincrement()) // display id, e.g. "L001"
+
+  companyName String
+  leadType    ProtocolLeadType
+  industry    String?
+
+  contactName  String?
+  contactTitle String?
+  phone        String?
+  email        String?
+  website      String?
+
+  source      String? // Referral, Cold Call, Cold Email, IG, Inbound/Website, Event/Trade Show, Networking, Other
+  assignedRep String? // freeform — reps aren't all app logins (Vlad, Marwa, Santiago, Sonya, ...)
+  priority    ProtocolLeadPriority?
+  status      ProtocolLeadStatus    @default(NEW)
+
+  dateFirstContacted      DateTime?
+  lastContactDate         DateTime?
+  totalTouches            Int       @default(0)
+  lastConversationSummary String?
+  nextStep                String?
+  nextFollowUpDate        DateTime?
+  followUpOwner           String?
+
+  eventOpportunity String?
+  dealValue        Float?
+  notes            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([leadType])
+  @@index([nextFollowUpDate])
 }

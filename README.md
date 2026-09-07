@@ -18,6 +18,20 @@ fight-camp schedule alongside the business.
   touch with (name, company, title, status, tags, assigned rep). Click into
   one to see the full shared timeline: emails, calls, texts, and notes, in
   order, with who did each one and when.
+- **Protocol CRM** (`/dashboard/protocol-crm`) — the sponsor/venue
+  partnership pipeline for Protocol events, modeled directly on the
+  Protocol-Sales-Tracker spreadsheet: one row per company (Sponsor or
+  Venue), with status (New → Contacted → Qualifying → Proposal Sent →
+  Negotiating → Follow-up Scheduled → Won/Lost/On Hold), priority, assigned
+  rep, next follow-up date with red/orange/yellow overdue flags, deal value,
+  and full conversation notes. A live dashboard up top (active leads,
+  sponsors vs. venues, overdue/due-this-week follow-ups, pipeline by status,
+  workload by rep) replaces the spreadsheet's manual "refresh to update"
+  snapshot — it's always current. Click any row to expand and edit every
+  field inline; click a status/priority/date cell directly to update it
+  without opening the row. Seeded once, automatically, with the ~140
+  sponsor/venue prospects already in the spreadsheet the first time anyone
+  opens the page — editing or adding leads afterward never re-seeds it.
 - **Mail** (`/dashboard/mail`) — connect your own Gmail (each teammate connects
   their own) and send/log email straight from a contact's page. Every email
   sent through the CRM is logged automatically.
