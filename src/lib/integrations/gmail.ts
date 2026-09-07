@@ -26,7 +26,12 @@ export function getGmailAuthUrl(state: string) {
   const client = getOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline",
-    prompt: "consent",
+    // "select_account" forces Google's account chooser every time, even if
+    // the browser only has one session active or already granted consent
+    // once — otherwise it silently reuses whatever Google account happens
+    // to be signed in, which isn't necessarily the one you want connected.
+    // "consent" on top of that guarantees a refresh_token comes back.
+    prompt: "select_account consent",
     scope: [
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/gmail.readonly",

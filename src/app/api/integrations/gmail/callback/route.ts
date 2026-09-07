@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   // match whoever is logged in now, bail rather than attach the wrong
   // account's Gmail to this session.
   if (!code || state !== session.user.id) {
-    return NextResponse.redirect(new URL("/dashboard/settings?gmail=error", req.url));
+    return NextResponse.redirect(new URL("/dashboard/mail?gmail=error", req.url));
   }
 
   try {
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       // Google only returns a refresh token on the first consent; if the
       // user had connected before and revoked, they need to fully
       // disconnect (in Google Account settings) before reconnecting.
-      return NextResponse.redirect(new URL("/dashboard/settings?gmail=no-refresh-token", req.url));
+      return NextResponse.redirect(new URL("/dashboard/mail?gmail=no-refresh-token", req.url));
     }
     await prisma.gmailConnection.upsert({
       where: { userId: session.user.id },
@@ -44,8 +44,8 @@ export async function GET(req: Request) {
       },
     });
   } catch {
-    return NextResponse.redirect(new URL("/dashboard/settings?gmail=error", req.url));
+    return NextResponse.redirect(new URL("/dashboard/mail?gmail=error", req.url));
   }
 
-  return NextResponse.redirect(new URL("/dashboard/settings?gmail=connected", req.url));
+  return NextResponse.redirect(new URL("/dashboard/mail?gmail=connected", req.url));
 }
