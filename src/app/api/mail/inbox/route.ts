@@ -41,6 +41,42 @@ export async function GET() {
       return { ...m, contact };
     });
 
+    // Log every inbound message that matches an existing contact as an
+    // Interaction, so the contact's page shows the whole conversation
+    // (what we sent + what they wrote back), not just our outbound sends.
+    // Deduped on externalId (the Gmail message id) so refreshing the inbox
+    // repeatedly doesn't create duplicate history. Unmatched senders (a
+    // stranger, a newsletter) are left alone — only conversations with a
+    // real contact get logged.
+    const matched = withContacts.filter((m) => m.contact);
+    if (matched.length > 0) {
+      const ids = matched.map((m) => m.id);
+      const already = await prisma.interaction.findMany({
+        where: { externalId: { in: ids } },
+        select: { externalId: true },
+      });
+      const alreadySynced = new Set(already.map((i) => i.externalId));
+      const toCreate = matched.filter((m) => !alreadySynced.has(m.id));
+      if (toCreate.length > 0) {
+        await prisma.interaction.createMany({
+          data: toCreate.map((m) => {
+            const parsedDate = new Date(m.date);
+            return {
+              contactId: m.contact!.id,
+              type: "EMAIL" as const,
+              direction: "INBOUND" as const,
+              subject: m.subject || null,
+              body: m.snippet || null,
+              fromAddress: extractEmailAddress(m.from) || m.from,
+              toAddress: extractEmailAddress(m.to) || m.to || null,
+              externalId: m.id,
+              occurredAt: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+            };
+          }),
+        });
+      }
+    }
+
     return NextResponse.json({ messages: withContacts });
   } catch (err) {
     return NextResponse.json(

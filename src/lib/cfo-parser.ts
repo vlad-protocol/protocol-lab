@@ -151,7 +151,14 @@ const TRANSFER_PATTERN = /interac e-transfer|transfer (in|out)/i;
 // noise-word stripping below and the \b-anchored category patterns above can
 // actually match text that's glued to a trailing "Purchase"/"Chequing"/etc.
 function splitRuns(text: string): string {
-  return text.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return text
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // Also split an acronym run stuck straight onto the next capitalized
+    // word — "CADStarbucks" → "CAD Starbucks". This shows up when a chunk's
+    // leading noise word (e.g. a trailing "CAD" from the PREVIOUS
+    // transaction on the same glued line) has nothing lowercase before the
+    // next merchant name to trigger the rule above.
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
 }
 
 function guessCategory(description: string, type: "INCOME" | "EXPENSE" = "EXPENSE"): string {
@@ -211,35 +218,55 @@ export function parseWealthsimpleText(raw: string, today: Date = new Date()): Pa
   // minus/dash. So the sign is optional here, and its absence means income.
   const amountPattern = /([+\-−–])?\s*\$\s*([\d,]+\.\d{2})/;
 
+  // A "chunk" (one buffered line, or several lines glued together before an
+  // amount showed up) can actually contain MORE THAN ONE transaction — the
+  // clipboard doesn't always insert a newline between Wealthsimple's rows,
+  // so two or more "MerchantPurchase...− $X.XX CAD" entries can land on the
+  // same physical line. Splitting on every amount match in the chunk (not
+  // just the first) is what makes that reliable: each transaction's
+  // description is exactly the text between the end of the previous amount
+  // and the start of this one, so an amount can never end up glued into a
+  // description, and no transaction after the first on a line gets dropped.
   function flush(pendingFlag: boolean) {
     if (buffer.length === 0) return;
     const chunk = buffer.join(" ");
     buffer = [];
-    if (/reversed/i.test(chunk)) return; // Wealthsimple's own reversal noise — skip entirely
 
-    const match = chunk.match(amountPattern);
-    if (!match) return;
+    const global = new RegExp(amountPattern.source, "g");
+    const matches: RegExpExecArray[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = global.exec(chunk))) matches.push(m);
+    if (matches.length === 0) return;
 
-    const sign = match[1];
-    const amount = Number(match[2].replace(/,/g, ""));
-    if (!amount) return;
-    const type: ParsedRow["type"] = sign === "+" || !sign ? "INCOME" : "EXPENSE";
+    let segStart = 0;
+    for (const match of matches) {
+      const segEnd = match.index + match[0].length;
+      const segment = chunk.slice(segStart, segEnd);
+      segStart = segEnd;
+      if (/reversed/i.test(segment)) continue; // Wealthsimple's own reversal noise — skip entirely
 
-    const description = stripNoise(chunk.slice(0, match.index)) || stripNoise(chunk) || "Unknown";
+      const sign = match[1];
+      const amount = Number(match[2].replace(/,/g, ""));
+      if (!amount) continue;
+      const type: ParsedRow["type"] = sign === "+" || !sign ? "INCOME" : "EXPENSE";
 
-    rows.push({
-      date: currentDate.toISOString().slice(0, 10),
-      description: description.slice(0, 120),
-      amount,
-      type,
-      pending: pendingFlag || /pending/i.test(chunk),
-      rawText: chunk.trim().slice(0, 300),
-      // Guess against the raw chunk, not the noise-stripped description —
-      // stripping words like "e-transfer" independently can chop up a
-      // multi-word phrase ("Interac e-Transfer") before the category
-      // matcher gets to see it whole.
-      category: guessCategory(chunk, type),
-    });
+      const descRaw = segment.slice(0, segment.length - match[0].length);
+      const description = stripNoise(descRaw) || "Unknown";
+
+      rows.push({
+        date: currentDate.toISOString().slice(0, 10),
+        description: description.slice(0, 120),
+        amount,
+        type,
+        pending: pendingFlag || /pending/i.test(segment),
+        rawText: segment.trim().slice(0, 300),
+        // Guess against this transaction's own segment, not the whole
+        // chunk — with multiple transactions in one chunk, guessing
+        // against the full chunk would leak one merchant's keyword match
+        // onto its neighbors.
+        category: guessCategory(segment, type),
+      });
+    }
   }
 
   for (const rawLine of lines) {

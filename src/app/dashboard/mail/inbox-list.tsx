@@ -16,7 +16,13 @@ type InboxMessage = {
   contact: { id: string; contactName: string; companyName: string | null } | null;
 };
 
-export function InboxList({ connected }: { connected: boolean }) {
+export function InboxList({
+  connected,
+  onUnreadCountChange,
+}: {
+  connected: boolean;
+  onUnreadCountChange?: (count: number) => void;
+}) {
   const [messages, setMessages] = useState<InboxMessage[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +46,10 @@ export function InboxList({ connected }: { connected: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
+  useEffect(() => {
+    onUnreadCountChange?.(messages ? messages.filter((m) => m.unread).length : 0);
+  }, [messages, onUnreadCountChange]);
+
   function markRead(id: string) {
     setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? { ...m, unread: false } : m)) : prev));
   }
@@ -52,11 +62,19 @@ export function InboxList({ connected }: { connected: boolean }) {
     );
   }
 
+  const unreadCount = messages ? messages.filter((m) => m.unread).length : 0;
+
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-[var(--hq-text-muted)]">
-          Your live Gmail inbox — most recent 25 messages. Click one to read, reply, or forward.
+          Your live Gmail inbox — most recent 25 messages.
+          {unreadCount > 0 && (
+            <span className="ml-1.5 font-semibold text-[var(--hq-accent)]">
+              {unreadCount} unread.
+            </span>
+          )}{" "}
+          Click one to read, reply, or forward.
         </p>
         <button
           onClick={load}
@@ -80,32 +98,57 @@ export function InboxList({ connected }: { connected: boolean }) {
           <button
             key={m.id}
             onClick={() => setOpenId(m.id)}
-            className="block w-full rounded-xl border border-[var(--hq-card-border)] bg-white p-4 text-left hover:border-[var(--hq-accent)]"
+            className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left ${
+              m.unread
+                ? "border-[var(--hq-accent)] bg-[var(--hq-accent-soft)] hover:border-[var(--hq-accent)]"
+                : "border-[var(--hq-card-border)] bg-white hover:border-[var(--hq-accent)]"
+            }`}
           >
-            <div className="flex items-center justify-between gap-2">
-              <p className={`truncate text-sm ${m.unread ? "font-semibold" : "font-medium"} text-[var(--hq-text)]`}>
-                {m.subject || "(no subject)"}
+            <span
+              className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                m.unread ? "bg-[var(--hq-accent)]" : "bg-transparent"
+              }`}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className={`truncate text-sm ${m.unread ? "font-bold" : "font-medium"} text-[var(--hq-text)]`}>
+                  {m.subject || "(no subject)"}
+                </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  {m.unread && (
+                    <span className="rounded-full bg-[var(--hq-accent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                      New
+                    </span>
+                  )}
+                  <p className="text-xs text-[var(--hq-text-muted)]">
+                    {m.date ? new Date(m.date).toLocaleString() : ""}
+                  </p>
+                </div>
+              </div>
+              <p className={`text-xs ${m.unread ? "font-semibold text-[var(--hq-text)]" : "text-[var(--hq-text-muted)]"}`}>
+                From {m.from}
+                {m.contact && (
+                  <>
+                    {" "}
+                    · matched to{" "}
+                    <span className="font-medium text-[var(--hq-accent)]">
+                      {m.contact.contactName}
+                      {m.contact.companyName ? ` · ${m.contact.companyName}` : ""}
+                    </span>
+                  </>
+                )}
               </p>
-              <p className="shrink-0 text-xs text-[var(--hq-text-muted)]">
-                {m.date ? new Date(m.date).toLocaleString() : ""}
-              </p>
-            </div>
-            <p className="text-xs text-[var(--hq-text-muted)]">
-              From {m.from}
-              {m.contact && (
-                <>
-                  {" "}
-                  · matched to{" "}
-                  <span className="font-medium text-[var(--hq-accent)]">
-                    {m.contact.contactName}
-                    {m.contact.companyName ? ` · ${m.contact.companyName}` : ""}
-                  </span>
-                </>
+              {m.snippet && (
+                <p
+                  className={`mt-1 line-clamp-2 text-sm ${
+                    m.unread ? "text-[var(--hq-text)]" : "text-[var(--hq-text-muted)]"
+                  }`}
+                >
+                  {m.snippet}
+                </p>
               )}
-            </p>
-            {m.snippet && (
-              <p className="mt-1 line-clamp-2 text-sm text-[var(--hq-text-muted)]">{m.snippet}</p>
-            )}
+            </div>
           </button>
         ))}
       </div>
