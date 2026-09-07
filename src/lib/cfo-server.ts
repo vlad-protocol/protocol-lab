@@ -25,6 +25,19 @@ export async function getOrSeedCategories(userId: string) {
     categories = await prisma.cFOBudgetCategory.findMany({ where: { userId }, orderBy: { order: "asc" } });
   }
 
+  // Pick up any canonical category added to DEFAULT_CFO_CATEGORIES after this
+  // account was created or last simplified (e.g. a new bucket introduced
+  // later) — append it without disturbing the order of existing categories.
+  const existingKeys = new Set(categories.map((c) => c.key));
+  const missing = DEFAULT_CFO_CATEGORIES.filter((c) => !existingKeys.has(c.key));
+  if (missing.length > 0) {
+    const maxOrder = categories.reduce((m, c) => Math.max(m, c.order), -1);
+    await prisma.cFOBudgetCategory.createMany({
+      data: missing.map((c, i) => ({ userId, key: c.key, label: c.label, order: maxOrder + 1 + i })),
+    });
+    categories = await prisma.cFOBudgetCategory.findMany({ where: { userId }, orderBy: { order: "asc" } });
+  }
+
   return categories;
 }
 

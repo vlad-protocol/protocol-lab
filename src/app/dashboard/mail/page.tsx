@@ -3,6 +3,8 @@ import { Mail } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
 import { GmailConnectCard } from "./gmail-connect-card";
+import { ComposeCard } from "./compose-card";
+import { MailTabs } from "./mail-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,32 +32,38 @@ export default async function MailPage() {
       </p>
 
       <GmailConnectCard connected={!!connection} email={connection?.email || null} />
+      <ComposeCard connected={!!connection} />
 
-      <div className="mt-6 space-y-2">
-        {emails.length === 0 && (
-          <p className="text-sm text-[var(--hq-text-muted)]">
-            No emails logged yet — send one from a contact's page to see it here.
-          </p>
-        )}
-        {emails.map((e) => (
-          <Link
-            key={e.id}
-            href={`/dashboard/people/${e.contact.id}`}
-            className="block rounded-xl border border-[var(--hq-card-border)] bg-white p-4 hover:border-[var(--hq-accent)]"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-[var(--hq-text)]">{e.subject || "(no subject)"}</p>
-              <p className="text-xs text-[var(--hq-text-muted)]">{new Date(e.occurredAt).toLocaleString()}</p>
-            </div>
-            <p className="text-xs text-[var(--hq-text-muted)]">
-              To {e.contact.contactName}
-              {e.contact.companyName ? ` · ${e.contact.companyName}` : ""} · sent by{" "}
-              {e.user?.name || e.user?.email || "someone"}
-            </p>
-            {e.body && <p className="mt-1 line-clamp-2 text-sm text-[var(--hq-text-muted)]">{e.body}</p>}
-          </Link>
-        ))}
-      </div>
+      <MailTabs
+        connected={!!connection}
+        sentFeed={
+          <>
+            {emails.length === 0 && (
+              <p className="text-sm text-[var(--hq-text-muted)]">
+                No emails logged yet — send one above or from a contact's page to see it here.
+              </p>
+            )}
+            {emails.map((e) => (
+              <Link
+                key={e.id}
+                href={`/dashboard/people/${e.contact.id}`}
+                className="block rounded-xl border border-[var(--hq-card-border)] bg-white p-4 hover:border-[var(--hq-accent)]"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-[var(--hq-text)]">{e.subject || "(no subject)"}</p>
+                  <p className="text-xs text-[var(--hq-text-muted)]">{new Date(e.occurredAt).toLocaleString()}</p>
+                </div>
+                <p className="text-xs text-[var(--hq-text-muted)]">
+                  To {e.contact.contactName}
+                  {e.contact.companyName ? ` · ${e.contact.companyName}` : ""} · sent by{" "}
+                  {e.user?.name || e.user?.email || "someone"}
+                </p>
+                {e.body && <p className="mt-1 line-clamp-2 text-sm text-[var(--hq-text-muted)]">{e.body}</p>}
+              </Link>
+            ))}
+          </>
+        }
+      />
     </div>
   );
 }

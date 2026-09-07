@@ -102,3 +102,60 @@ export async function sendGmail(userId: string, to: string, subject: string, bod
   const res = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
   return res.data.id as string;
 }
+
+export type GmailInboxMessage = {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  unread: boolean;
+};
+
+// Pulls the address out of a "Display Name <addr@x.com>" style header value.
+export function extractEmailAddress(headerValue: string): string | null {
+  const match = headerValue.match(/<([^>]+)>/);
+  if (match) return match[1].trim();
+  const trimmed = headerValue.trim();
+  return trimmed.includes("@") ? trimmed : null;
+}
+
+export async function listGmailInbox(userId: string, maxResults = 25): Promise<GmailInboxMessage[]> {
+  const client = await getClientForUser(userId);
+  const gmail = google.gmail({ version: "v1", auth: client });
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    maxResults,
+    labelIds: ["INBOX"],
+  });
+  const refs = list.data.messages || [];
+
+  const messages = await Promise.all(
+    refs.map(async (ref) => {
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id: ref.id as string,
+        format: "metadata",
+        metadataHeaders: ["From", "To", "Subject", "Date"],
+      });
+      const headers = msg.data.payload?.headers || [];
+      const header = (name: string) =>
+        headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+      return {
+        id: msg.data.id as string,
+        threadId: (msg.data.threadId || "") as string,
+        from: header("From"),
+        to: header("To"),
+        subject: header("Subject"),
+        date: header("Date"),
+        snippet: msg.data.snippet || "",
+        unread: (msg.data.labelIds || []).includes("UNREAD"),
+      };
+    })
+  );
+
+  return messages;
+}

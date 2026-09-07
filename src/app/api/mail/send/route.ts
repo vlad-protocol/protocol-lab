@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { contactId, to, subject, text, logOnly } = body as {
+  const { contactId: rawContactId, to, subject, text, logOnly } = body as {
     contactId?: string;
     to?: string;
     subject?: string;
@@ -19,11 +19,33 @@ export async function POST(req: Request) {
     logOnly?: boolean; // true = "I sent this myself elsewhere, just log it"
   };
 
-  if (!contactId || !to || !subject || !text) {
+  if (!to || !subject || !text) {
     return NextResponse.json(
-      { error: "contactId, to, subject, and text are required." },
+      { error: "to, subject, and text are required." },
       { status: 400 }
     );
+  }
+
+  // Sending from the general Mail page (not a contact's page) won't have a
+  // contactId — find an existing CRM contact by email, or create a new lead
+  // for them, so the send still shows up in that contact's timeline.
+  let contactId = rawContactId;
+  if (!contactId) {
+    const existing = await prisma.contact.findFirst({
+      where: { email: { equals: to, mode: "insensitive" } },
+    });
+    if (existing) {
+      contactId = existing.id;
+    } else {
+      const created = await prisma.contact.create({
+        data: {
+          contactName: to.split("@")[0],
+          email: to,
+          createdById: session.user.id,
+        },
+      });
+      contactId = created.id;
+    }
   }
 
   let externalId: string | null = null;

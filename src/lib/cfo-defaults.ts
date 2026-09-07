@@ -9,6 +9,7 @@ export const DEFAULT_CFO_CATEGORIES: { key: string; label: string }[] = [
   { key: "dining_cafes", label: "Dining & Cafes" },
   { key: "transport", label: "Transport & Gas" },
   { key: "bills_debt", label: "Bills & Debt" },
+  { key: "personal_wants", label: "Personal & Wants" },
   { key: "business", label: "Business" },
   { key: "income", label: "Income" },
   { key: "other", label: "Everything Else" },
@@ -26,7 +27,7 @@ export const CATEGORY_MERGE_MAP: Record<string, string> = {
   subscriptions: "bills_debt",
   utilities: "bills_debt",
   debt: "bills_debt",
-  shopping: "other",
-  fitness: "other",
+  shopping: "personal_wants",
+  fitness: "personal_wants",
   social_transfers: "other",
 };

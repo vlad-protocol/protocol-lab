@@ -109,17 +109,22 @@ const CATEGORY_KEYWORDS: { pattern: RegExp; category: string }[] = [
   // Groceries
   { pattern: /marche adonis|adonis \d|\biga\b|\bmetro\b|\bmaxi\b|super c\b|costco wholesale|h-mart|provigo|marche |fruits de la|fruiterie|epicerie/i, category: "groceries" },
 
-  // Everything Else (retail/shopping, pharmacy, florist, personal care,
-  // fitness, pet stores, festivals/events, and the personal side of Interac
+  // Personal & Wants (discretionary spending on yourself: shopping, personal
+  // care, fitness — barber, gym, Amazon and retail purchases, and the like)
+  { pattern: /amazon|amzn/i, category: "personal_wants" },
+  { pattern: /dollarama|winners|homesense|marshalls|best buy|michaels|indigo|wal-mart|walmart|sports experts|swarovski|zara\b|shein/i, category: "personal_wants" },
+  { pattern: /jean coutu|pharmaprix|uniprix/i, category: "personal_wants" },
+  { pattern: /barbershop|barber\b/i, category: "personal_wants" },
+  { pattern: /anytime\s*fitn/i, category: "personal_wants" },
+  { pattern: /gym callisthenie|calisthenics gym/i, category: "personal_wants" },
+  { pattern: /academie d.?arts mart/i, category: "personal_wants" },
+
+  // Everything Else (household/office supplies, pharmacy errands, florist,
+  // pet stores, festivals/events, moving, and the personal side of Interac
   // transfers all land here — kept broad on purpose so the category list
   // stays short)
-  { pattern: /dollarama|winners|homesense|marshalls|canadian tire|bureau en gros|best buy|michaels|indigo|wal-mart|walmart|sports experts|swarovski|zara\b|shein/i, category: "other" },
-  { pattern: /jean coutu|pharmaprix|uniprix/i, category: "other" },
+  { pattern: /canadian tire|bureau en gros/i, category: "other" },
   { pattern: /fleuriste|fleur|florist/i, category: "other" },
-  { pattern: /barbershop|barber\b/i, category: "other" },
-  { pattern: /anytime\s*fitn/i, category: "other" },
-  { pattern: /gym callisthenie|calisthenics gym/i, category: "other" },
-  { pattern: /academie d.?arts mart/i, category: "other" },
   { pattern: /provi-?soir|\bvoisin\b/i, category: "other" },
   { pattern: /mondou|apollo indoor dog/i, category: "other" },
   { pattern: /sqdc/i, category: "other" },
