@@ -104,16 +104,18 @@ enum ContactType {
   VENUE
 }
 
+// Pipeline stages, in board-column order (see the Kanban board view).
 enum LeadStatus {
-  NEW
-  CONTACTED
-  QUALIFYING
-  PROPOSAL_SENT
+  NEW_LEAD
+  CONTACTED_ONCE
+  FOLLOW_UP_1
+  FOLLOW_UP_2
+  FOLLOW_UP_LAST
+  STALE
+  MEETING_BOOKED
   NEGOTIATING
-  FOLLOW_UP_SCHEDULED
   WON
   LOST
-  ON_HOLD
 }
 
 enum LeadPriority {
@@ -135,7 +137,7 @@ model Contact {
   industry    String?
 
   type     ContactType   @default(CLIENT)
-  status   LeadStatus    @default(NEW)
+  status   LeadStatus    @default(NEW_LEAD)
   priority LeadPriority?
   tags     String[]      @default([])
 

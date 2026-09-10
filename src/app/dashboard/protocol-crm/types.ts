@@ -1,15 +1,16 @@
 export type LeadType = "CLIENT" | "SPONSOR" | "VENUE";
 export type LeadPriority = "HOT" | "WARM" | "COLD";
 export type LeadStatus =
-  | "NEW"
-  | "CONTACTED"
-  | "QUALIFYING"
-  | "PROPOSAL_SENT"
+  | "NEW_LEAD"
+  | "CONTACTED_ONCE"
+  | "FOLLOW_UP_1"
+  | "FOLLOW_UP_2"
+  | "FOLLOW_UP_LAST"
+  | "STALE"
+  | "MEETING_BOOKED"
   | "NEGOTIATING"
-  | "FOLLOW_UP_SCHEDULED"
   | "WON"
-  | "LOST"
-  | "ON_HOLD";
+  | "LOST";
 
 export type Lead = {
   id: string;
@@ -50,16 +51,18 @@ export const TYPE_STYLE: Record<LeadType, string> = {
   VENUE: "bg-blue-50 text-blue-700",
 };
 
+// Board-column order — this is also the Kanban view's left-to-right order.
 export const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
-  { value: "NEW", label: "New" },
-  { value: "CONTACTED", label: "Contacted" },
-  { value: "QUALIFYING", label: "Qualifying" },
-  { value: "PROPOSAL_SENT", label: "Proposal Sent" },
-  { value: "NEGOTIATING", label: "Negotiating" },
-  { value: "FOLLOW_UP_SCHEDULED", label: "Follow-up Scheduled" },
+  { value: "NEW_LEAD", label: "New Lead" },
+  { value: "CONTACTED_ONCE", label: "Contacted Once" },
+  { value: "FOLLOW_UP_1", label: "1st Follow Up" },
+  { value: "FOLLOW_UP_2", label: "Second Follow Up" },
+  { value: "FOLLOW_UP_LAST", label: "Last Follow Up" },
+  { value: "STALE", label: "Stale" },
+  { value: "MEETING_BOOKED", label: "1st Meeting Booked" },
+  { value: "NEGOTIATING", label: "Negotiations" },
   { value: "WON", label: "Won" },
   { value: "LOST", label: "Lost" },
-  { value: "ON_HOLD", label: "On Hold" },
 ];
 
 export const STATUS_LABEL: Record<LeadStatus, string> = Object.fromEntries(
@@ -67,15 +70,31 @@ export const STATUS_LABEL: Record<LeadStatus, string> = Object.fromEntries(
 ) as Record<LeadStatus, string>;
 
 export const STATUS_STYLE: Record<LeadStatus, string> = {
-  NEW: "bg-neutral-100 text-neutral-600",
-  CONTACTED: "bg-blue-50 text-blue-700",
-  QUALIFYING: "bg-indigo-50 text-indigo-700",
-  PROPOSAL_SENT: "bg-purple-50 text-purple-700",
+  NEW_LEAD: "bg-neutral-100 text-neutral-600",
+  CONTACTED_ONCE: "bg-blue-50 text-blue-700",
+  FOLLOW_UP_1: "bg-indigo-50 text-indigo-700",
+  FOLLOW_UP_2: "bg-purple-50 text-purple-700",
+  FOLLOW_UP_LAST: "bg-fuchsia-50 text-fuchsia-700",
+  STALE: "bg-neutral-100 text-neutral-500",
+  MEETING_BOOKED: "bg-cyan-50 text-cyan-700",
   NEGOTIATING: "bg-amber-50 text-amber-700",
-  FOLLOW_UP_SCHEDULED: "bg-cyan-50 text-cyan-700",
   WON: "bg-emerald-50 text-emerald-700",
   LOST: "bg-red-50 text-red-700",
-  ON_HOLD: "bg-neutral-100 text-neutral-500",
+};
+
+// The column-top accent bar color in the Kanban board (matches STATUS_STYLE
+// but as a solid bar color rather than a chip background).
+export const STATUS_BAR: Record<LeadStatus, string> = {
+  NEW_LEAD: "bg-neutral-400",
+  CONTACTED_ONCE: "bg-blue-500",
+  FOLLOW_UP_1: "bg-indigo-500",
+  FOLLOW_UP_2: "bg-purple-500",
+  FOLLOW_UP_LAST: "bg-fuchsia-500",
+  STALE: "bg-neutral-400",
+  MEETING_BOOKED: "bg-cyan-500",
+  NEGOTIATING: "bg-amber-500",
+  WON: "bg-emerald-500",
+  LOST: "bg-red-500",
 };
 
 export const PRIORITY_STYLE: Record<LeadPriority, string> = {
@@ -85,12 +104,14 @@ export const PRIORITY_STYLE: Record<LeadPriority, string> = {
 };
 
 export const OPEN_STATUSES: LeadStatus[] = [
-  "NEW",
-  "CONTACTED",
-  "QUALIFYING",
-  "PROPOSAL_SENT",
+  "NEW_LEAD",
+  "CONTACTED_ONCE",
+  "FOLLOW_UP_1",
+  "FOLLOW_UP_2",
+  "FOLLOW_UP_LAST",
+  "STALE",
+  "MEETING_BOOKED",
   "NEGOTIATING",
-  "FOLLOW_UP_SCHEDULED",
 ];
 
 export function money(n: number) {

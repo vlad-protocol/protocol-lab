@@ -1,7 +1,7 @@
 import { Handshake } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
-import { ProtocolCRMView } from "./protocol-crm-view";
+import { ProtocolCRMShell } from "./protocol-crm-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ export default async function ProtocolCRMPage() {
       </div>
 
       <div className="mt-6">
-        <ProtocolCRMView
+        <ProtocolCRMShell
           initialLeads={leads.map((l) => ({
             ...l,
             dateFirstContacted: l.dateFirstContacted ? l.dateFirstContacted.toISOString() : null,

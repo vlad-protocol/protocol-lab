@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import {
   type Lead,
   type LeadPriority,
-  type LeadStatus,
   OPEN_STATUSES,
   PRIORITY_STYLE,
   STATUS_OPTIONS,
@@ -14,7 +13,6 @@ import {
   TYPE_STYLE,
   money,
 } from "./types";
-import { AddLeadButton } from "./add-lead-button";
 
 const PRIORITY_OPTIONS: { value: LeadPriority; label: string }[] = [
   { value: "HOT", label: "Hot" },
@@ -45,144 +43,31 @@ function fmtDateInput(dateStr: string | null) {
   return dateStr.slice(0, 10);
 }
 
-export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
-  const [leads, setLeads] = useState(initialLeads);
+export function ProtocolCRMView({
+  leads,
+  onPatch,
+  onRemove,
+  savingId,
+}: {
+  leads: Lead[];
+  onPatch: (id: string, data: Record<string, unknown>) => void;
+  onRemove: (id: string) => void;
+  savingId: string | null;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("OPEN");
-  const [typeFilter, setTypeFilter] = useState<string>("ALL");
-  const [repFilter, setRepFilter] = useState<string>("ALL");
-
-  const stats = useMemo(() => {
-    const clients = leads.filter((l) => l.type === "CLIENT").length;
-    const sponsors = leads.filter((l) => l.type === "SPONSOR").length;
-    const venues = leads.filter((l) => l.type === "VENUE").length;
-    const won = leads.filter((l) => l.status === "WON").length;
-    const active = leads.filter((l) => OPEN_STATUSES.includes(l.status)).length;
-
-    let overdue = 0,
-      dueToday = 0,
-      dueWeek = 0;
-    for (const l of leads) {
-      if (!OPEN_STATUSES.includes(l.status)) continue;
-      const days = daysUntil(l.nextFollowUpDate);
-      if (days === null) continue;
-      if (days < 0) overdue++;
-      else if (days === 0) dueToday++;
-      else if (days <= 7) dueWeek++;
-    }
-
-    const byStatus = new Map<LeadStatus, number>();
-    for (const l of leads) byStatus.set(l.status, (byStatus.get(l.status) || 0) + 1);
-
-    const byRep = new Map<string, { total: number; overdue: number }>();
-    for (const l of leads) {
-      const rep = l.assignedRep || "Unassigned";
-      const entry = byRep.get(rep) || { total: 0, overdue: 0 };
-      entry.total++;
-      if (OPEN_STATUSES.includes(l.status)) {
-        const days = daysUntil(l.nextFollowUpDate);
-        if (days !== null && days < 0) entry.overdue++;
-      }
-      byRep.set(rep, entry);
-    }
-
-    return { clients, sponsors, venues, won, active, overdue, dueToday, dueWeek, byStatus, byRep };
-  }, [leads]);
-
-  const reps = useMemo(() => {
-    const set = new Set<string>();
-    for (const l of leads) if (l.assignedRep) set.add(l.assignedRep);
-    return [...set].sort();
-  }, [leads]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return leads.filter((l) => {
       if (statusFilter === "OPEN" && !OPEN_STATUSES.includes(l.status)) return false;
       if (statusFilter !== "OPEN" && statusFilter !== "ALL" && l.status !== statusFilter) return false;
-      if (typeFilter !== "ALL" && l.type !== typeFilter) return false;
-      if (repFilter !== "ALL" && (l.assignedRep || "Unassigned") !== repFilter) return false;
-      if (q) {
-        const hay = `${l.companyName || ""} ${l.contactName || ""} ${l.industry || ""} ${l.eventOpportunity || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
       return true;
     });
-  }, [leads, search, statusFilter, typeFilter, repFilter]);
-
-  async function patch(id: string, data: Record<string, unknown>) {
-    setSavingId(id);
-    const res = await fetch(`/api/contacts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    setSavingId(null);
-    if (res.ok) {
-      const { contact } = await res.json();
-      setLeads((prev) => prev.map((l) => (l.id === id ? contact : l)));
-    }
-  }
-
-  async function remove(id: string) {
-    if (!confirm("Delete this lead and its whole history? This can't be undone.")) return;
-    const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" });
-    if (res.ok) setLeads((prev) => prev.filter((l) => l.id !== id));
-  }
+  }, [leads, statusFilter]);
 
   return (
     <div>
-      {/* Dashboard */}
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Active leads" value={stats.active} />
-        <StatCard label="Clients" value={stats.clients} />
-        <StatCard label="Sponsors" value={stats.sponsors} />
-        <StatCard label="Venues" value={stats.venues} />
-        <StatCard label="Deals won" value={stats.won} accent="text-emerald-600" />
-        <StatCard label="Overdue follow-ups" value={stats.overdue} accent={stats.overdue > 0 ? "text-red-600" : undefined} />
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
-          <p className="text-xs font-semibold text-[var(--hq-text)]">Pipeline by status</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {STATUS_OPTIONS.map((s) => {
-              const count = stats.byStatus.get(s.value) || 0;
-              if (count === 0) return null;
-              return (
-                <span key={s.value} className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[s.value]}`}>
-                  {s.label} ({count})
-                </span>
-              );
-            })}
-          </div>
-        </div>
-        <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
-          <p className="text-xs font-semibold text-[var(--hq-text)]">Workload by rep</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--hq-text-muted)]">
-            {[...stats.byRep.entries()].map(([rep, s]) => (
-              <span key={rep}>
-                {rep}: {s.total}
-                {s.overdue > 0 && <span className="text-red-600"> ({s.overdue} overdue)</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[var(--hq-text-muted)]" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search company, contact, industry, event…"
-            className="w-full rounded-lg border border-[var(--hq-card-border)] bg-white py-2 pl-8 pr-3 text-sm"
-          />
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -196,33 +81,10 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
             </option>
           ))}
         </select>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-lg border border-[var(--hq-card-border)] bg-white px-2 py-2 text-sm"
-        >
-          <option value="ALL">All types</option>
-          <option value="CLIENT">Clients</option>
-          <option value="SPONSOR">Sponsors</option>
-          <option value="VENUE">Venues</option>
-        </select>
-        <select
-          value={repFilter}
-          onChange={(e) => setRepFilter(e.target.value)}
-          className="rounded-lg border border-[var(--hq-card-border)] bg-white px-2 py-2 text-sm"
-        >
-          <option value="ALL">All reps</option>
-          {reps.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-        <AddLeadButton onCreated={(lead) => setLeads((prev) => [...prev, lead])} />
+        <p className="text-xs text-[var(--hq-text-muted)]">
+          Showing {filtered.length} of {leads.length} leads.
+        </p>
       </div>
-      <p className="mt-1.5 text-xs text-[var(--hq-text-muted)]">
-        Showing {filtered.length} of {leads.length} leads.
-      </p>
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--hq-card-border)] bg-white">
@@ -268,7 +130,7 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={l.status}
-                        onChange={(e) => patch(l.id, { status: e.target.value })}
+                        onChange={(e) => onPatch(l.id, { status: e.target.value })}
                         className={`rounded px-1.5 py-1 text-xs font-medium ${STATUS_STYLE[l.status]}`}
                       >
                         {STATUS_OPTIONS.map((s) => (
@@ -281,7 +143,7 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={l.priority || ""}
-                        onChange={(e) => patch(l.id, { priority: e.target.value })}
+                        onChange={(e) => onPatch(l.id, { priority: e.target.value })}
                         className={`rounded px-1.5 py-1 text-xs font-medium ${l.priority ? PRIORITY_STYLE[l.priority] : "text-[var(--hq-text-muted)]"}`}
                       >
                         <option value="">—</option>
@@ -298,7 +160,7 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
                         <input
                           type="date"
                           value={fmtDateInput(l.nextFollowUpDate)}
-                          onChange={(e) => patch(l.id, { nextFollowUpDate: e.target.value || null })}
+                          onChange={(e) => onPatch(l.id, { nextFollowUpDate: e.target.value || null })}
                           className="rounded border border-[var(--hq-card-border)] px-1 py-0.5 text-xs"
                         />
                         {flag && OPEN_STATUSES.includes(l.status) && (
@@ -313,7 +175,7 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
                   {isOpen && (
                     <tr className="border-b border-[var(--hq-card-border)] bg-[var(--hq-canvas)]/40">
                       <td colSpan={8} className="px-4 py-4">
-                        <LeadDetail lead={l} onPatch={(data) => patch(l.id, data)} onDelete={() => remove(l.id)} saving={savingId === l.id} />
+                        <LeadDetail lead={l} onPatch={(data) => onPatch(l.id, data)} onDelete={() => onRemove(l.id)} saving={savingId === l.id} />
                       </td>
                     </tr>
                   )}
@@ -330,15 +192,6 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
-  return (
-    <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
-      <p className="text-xs text-[var(--hq-text-muted)]">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${accent || "text-[var(--hq-text)]"}`}>{value}</p>
     </div>
   );
 }
