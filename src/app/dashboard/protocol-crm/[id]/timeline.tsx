@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video } from "lucide-react";
 
 type Interaction = {
   id: string;
-  type: "EMAIL" | "CALL" | "TEXT" | "NOTE";
+  type: "EMAIL" | "CALL" | "TEXT" | "NOTE" | "VIDEO_CALL";
   direction: "INBOUND" | "OUTBOUND";
   subject: string | null;
   body: string | null;
@@ -18,9 +18,16 @@ type Interaction = {
   user: { id: string; name: string | null; email: string } | null;
 };
 
-const TYPE_ICON = { EMAIL: Mail, CALL: Phone, TEXT: MessageSquare, NOTE: StickyNote };
+const TYPE_ICON = { EMAIL: Mail, CALL: Phone, TEXT: MessageSquare, NOTE: StickyNote, VIDEO_CALL: Video };
+const TYPE_LABEL: Record<Interaction["type"], string> = {
+  EMAIL: "Email",
+  CALL: "Call",
+  TEXT: "Text",
+  NOTE: "Note",
+  VIDEO_CALL: "Video call",
+};
 
-type Tab = "note" | "call" | "text" | "email";
+type Tab = "note" | "call" | "video" | "text" | "email";
 
 export function Timeline({
   contactId,
@@ -40,6 +47,7 @@ export function Timeline({
 
   const [noteForm, setNoteForm] = useState({ body: "" });
   const [callForm, setCallForm] = useState({ direction: "OUTBOUND", durationSeconds: "", body: "" });
+  const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "" });
   const [textForm, setTextForm] = useState({ to: contactPhone || "", body: "" });
   const [emailForm, setEmailForm] = useState({ to: contactEmail || "", subject: "", body: "" });
   const [repPhone, setRepPhone] = useState("");
@@ -50,7 +58,7 @@ export function Timeline({
     router.refresh();
   }
 
-  async function logManual(type: "NOTE" | "CALL", data: Record<string, unknown>) {
+  async function logManual(type: "NOTE" | "CALL" | "VIDEO_CALL", data: Record<string, unknown>) {
     setSubmitting(true);
     setError(null);
     const res = await fetch(`/api/contacts/${contactId}/interactions`, {
@@ -81,6 +89,21 @@ export function Timeline({
       body: callForm.body,
     });
     setCallForm({ direction: "OUTBOUND", durationSeconds: "", body: "" });
+  }
+
+  async function submitVideo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!videoForm.recordingUrl && !videoForm.body) {
+      setError("Add a link to the recording, or at least a note about what was discussed.");
+      return;
+    }
+    await logManual("VIDEO_CALL", {
+      direction: videoForm.direction,
+      durationSeconds: Number(videoForm.durationSeconds) || null,
+      recordingUrl: videoForm.recordingUrl || null,
+      body: videoForm.body,
+    });
+    setVideoForm({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "" });
   }
 
   async function submitText(sendReal: boolean) {
@@ -154,16 +177,19 @@ export function Timeline({
     <div className="mt-6">
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setTab(tab === "note" ? null : "note")} className="rounded-full border border-[var(--hq-card-border)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--hq-text)]">
-          + Note
+          {tab === "note" ? "−" : "+"} Note
         </button>
         <button onClick={() => setTab(tab === "call" ? null : "call")} className="rounded-full border border-[var(--hq-card-border)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--hq-text)]">
-          + Log call
+          {tab === "call" ? "−" : "+"} Log call
+        </button>
+        <button onClick={() => setTab(tab === "video" ? null : "video")} className="rounded-full border border-[var(--hq-card-border)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--hq-text)]">
+          {tab === "video" ? "−" : "+"} Video call
         </button>
         <button onClick={() => setTab(tab === "text" ? null : "text")} className="rounded-full border border-[var(--hq-card-border)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--hq-text)]">
-          + Text
+          {tab === "text" ? "−" : "+"} Text
         </button>
         <button onClick={() => setTab(tab === "email" ? null : "email")} className="rounded-full bg-[var(--hq-accent)] px-3 py-1.5 text-sm font-medium text-white">
-          + Email
+          {tab === "email" ? "−" : "+"} Email
         </button>
       </div>
 
@@ -246,6 +272,50 @@ export function Timeline({
             </div>
           )}
 
+          {tab === "video" && (
+            <form onSubmit={submitVideo} className="space-y-2">
+              <div className="rounded-md bg-[var(--hq-canvas)] p-3 text-xs text-[var(--hq-text-muted)]">
+                Log a video call (Zoom, Meet, Teams, etc.) — paste the link to wherever the
+                recording lives (Zoom cloud, Google Drive, YouTube unlisted, whatever you use) so
+                it shows up right here on the lead's timeline.
+              </div>
+              <div className="flex gap-2">
+                <select
+                  className="rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                  value={videoForm.direction}
+                  onChange={(e) => setVideoForm({ ...videoForm, direction: e.target.value })}
+                >
+                  <option value="OUTBOUND">Outbound</option>
+                  <option value="INBOUND">Inbound</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Duration (seconds)"
+                  className="flex-1 rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                  value={videoForm.durationSeconds}
+                  onChange={(e) => setVideoForm({ ...videoForm, durationSeconds: e.target.value })}
+                />
+              </div>
+              <input
+                type="url"
+                placeholder="Link to the recorded call (e.g. https://zoom.us/rec/...)"
+                className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                value={videoForm.recordingUrl}
+                onChange={(e) => setVideoForm({ ...videoForm, recordingUrl: e.target.value })}
+              />
+              <textarea
+                placeholder="What was discussed?"
+                rows={2}
+                className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                value={videoForm.body}
+                onChange={(e) => setVideoForm({ ...videoForm, body: e.target.value })}
+              />
+              <button disabled={submitting} className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+                Log video call
+              </button>
+            </form>
+          )}
+
           {tab === "text" && (
             <div className="space-y-2">
               <input
@@ -324,7 +394,7 @@ export function Timeline({
                 <div className="flex items-center justify-between">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--hq-text)]">
                     <DirIcon className="h-3.5 w-3.5 text-[var(--hq-text-muted)]" />
-                    {i.subject || i.type.charAt(0) + i.type.slice(1).toLowerCase()}
+                    {i.subject || TYPE_LABEL[i.type]}
                   </p>
                   <p className="text-xs text-[var(--hq-text-muted)]">
                     {new Date(i.occurredAt).toLocaleString()}
@@ -336,7 +406,7 @@ export function Timeline({
                   {i.durationSeconds != null && <span>{Math.round(i.durationSeconds / 60)} min</span>}
                   {i.recordingUrl && (
                     <a href={i.recordingUrl} target="_blank" className="font-medium text-[var(--hq-accent)] hover:underline">
-                      Play recording
+                      {i.type === "VIDEO_CALL" ? "Watch recording" : "Play recording"}
                     </a>
                   )}
                 </div>

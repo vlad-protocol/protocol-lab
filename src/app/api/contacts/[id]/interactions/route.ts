@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     data: {
       contactId: id,
       userId: session.user.id,
-      type: type as "EMAIL" | "CALL" | "TEXT" | "NOTE",
+      type: type as "EMAIL" | "CALL" | "TEXT" | "NOTE" | "VIDEO_CALL",
       direction: direction as "INBOUND" | "OUTBOUND",
       subject: subject || null,
       body: text || null,

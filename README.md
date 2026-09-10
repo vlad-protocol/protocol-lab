@@ -223,6 +223,60 @@ separately from any Claude.ai subscription — a chat feature like this one
 typically costs a few cents per conversation, but check current pricing
 before relying on heavy daily use.
 
+## Campaigns setup (mass email & SMS blasts)
+
+The Campaigns tab (`/dashboard/campaigns`) is a self-hosted "mini Brevo":
+mass email campaigns, mass SMS blasts, and automatic unsubscribe/bounce
+handling, targeted ad hoc against your Protocol CRM (by type/pipeline
+stage) rather than a saved contact list.
+
+**Email — Amazon SES:**
+
+1. Create an AWS account (or use an existing one) and open the
+   [SES console](https://console.aws.amazon.com/ses/).
+2. Under **Verified identities**, verify the domain you'll send from
+   (SES gives you DNS records — add them at your domain registrar; this
+   also sets up DKIM signing, which matters a lot for inbox placement).
+3. Create an IAM user with the `AmazonSESFullAccess` policy (or a scoped
+   policy allowing `ses:SendEmail`/`ses:SendRawEmail`), then create an
+   access key for it.
+4. In Railway, add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+   `AWS_REGION` (the region you verified your domain in, e.g.
+   `us-east-1`), and `SES_FROM_EMAIL` (an address at your verified
+   domain). Redeploy.
+5. **Important:** new SES accounts start in a **sandbox** — you can only
+   send to individually verified recipient addresses, at a low rate. Real
+   bulk sending needs "production access": in the SES console, open
+   **Account dashboard** and click **Request production access**, fill in
+   the short form about your use case (they ask about list hygiene/opt-in
+   — mention the built-in unsubscribe handling here), and wait for AWS's
+   approval (usually well under a day).
+6. To automatically suppress bounced/complained addresses, create an SNS
+   topic, subscribe it to your SES identity's bounce and complaint
+   notifications (SES console → your identity → **Notifications**), then
+   add an HTTPS subscriber to that topic pointing at
+   `https://your-app-url/api/webhooks/ses?secret=YOUR_SES_WEBHOOK_SECRET`
+   (set `SES_WEBHOOK_SECRET` in Railway to whatever you put in the URL —
+   generate one with `openssl rand -hex 16`). SNS will hit that URL once
+   to confirm the subscription; the app confirms it automatically.
+
+**SMS — reuses your existing Twilio connection** (see above) — nothing
+extra to configure. Carriers require **A2P 10DLC** registration before a
+Twilio number can send bulk/marketing SMS in the US; register your
+brand and campaign at
+[twilio.com/docs/sms/a2p-10dlc](https://www.twilio.com/docs/sms/a2p-10dlc).
+Until that's approved, expect messages to be rate-limited, filtered, or
+blocked by carriers — you can still build and test campaigns against a
+small audience in the meantime.
+
+**How sending actually works:** hitting "Send now" on a draft snapshots
+the matching contacts into per-recipient rows right away, so the record
+of who got it doesn't change if the CRM changes later. A background job
+(the same 15-minute tick that runs Automations and Follow-up Sequences)
+drains a batch of pending sends every tick rather than firing them all
+at once, to stay under SES's/Twilio's sending-rate limits — a large
+campaign trickles out over multiple ticks instead of all at once.
+
 ## Team & permissions
 
 Only the owner can invite teammates and set their access, from Settings →

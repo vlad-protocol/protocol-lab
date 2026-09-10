@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Flame, BarChart2, Handshake, Workflow } from "lucide-react";
+import { Flame, BarChart2, Handshake, Workflow, Radio } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -12,11 +12,14 @@ export default async function DashboardOverview() {
   if (!session) redirect("/login");
   const userId = session.user.id;
 
-  const [reelCount, statCount, contactCount, automationCount] = await Promise.all([
+  const [reelCount, statCount, contactCount, automationCount, campaignCount] = await Promise.all([
     prisma.reel.count({ where: { userId } }),
     prisma.weeklyStat.count({ where: { userId } }),
     canAccess(session.user, "protocol_crm") ? prisma.contact.count() : Promise.resolve(0),
     canAccess(session.user, "automations") ? prisma.automation.count() : Promise.resolve(0),
+    canAccess(session.user, "campaigns")
+      ? Promise.all([prisma.emailCampaign.count(), prisma.smsCampaign.count()]).then(([a, b]) => a + b)
+      : Promise.resolve(0),
   ]);
 
   const tiles = [
@@ -47,6 +50,13 @@ export default async function DashboardOverview() {
       label: "Automations",
       value: automationCount,
       sub: "configured",
+    },
+    canAccess(session.user, "campaigns") && {
+      href: "/dashboard/campaigns",
+      icon: <Radio className="h-3.5 w-3.5 text-[var(--hq-accent)]" />,
+      label: "Campaigns",
+      value: campaignCount,
+      sub: "email & SMS blasts",
     },
   ].filter(Boolean) as { href: string; icon: React.ReactNode; label: string; value: number; sub: string }[];
 

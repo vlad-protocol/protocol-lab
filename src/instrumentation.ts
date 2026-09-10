@@ -19,6 +19,7 @@ export async function register() {
 
   const { runDueAutomations } = await import("@/lib/automations");
   const { runDueSequenceSteps } = await import("@/lib/sequences");
+  const { runDueEmailCampaignSends, runDueSmsCampaignSends } = await import("@/lib/campaigns");
 
   g.__hqAutomationTimer = setInterval(async () => {
     try {
@@ -42,6 +43,31 @@ export async function register() {
       }
     } catch (err) {
       console.error("[sequences] background run failed:", err);
+    }
+
+    try {
+      // Same tick — drains a batch of pending mass-email campaign sends
+      // (see src/lib/campaigns.ts). Batched so a several-thousand-contact
+      // campaign trickles out over many ticks instead of blowing past
+      // Amazon SES's sending-rate limit in one go.
+      const baseUrl = process.env.PUBLIC_APP_URL || "http://localhost:3000";
+      const emailResults = await runDueEmailCampaignSends(baseUrl);
+      if (emailResults.length > 0) {
+        console.log(
+          `[campaigns] sent ${emailResults.filter((r) => !r.error).length}/${emailResults.length} emails`
+        );
+      }
+    } catch (err) {
+      console.error("[campaigns] email background run failed:", err);
+    }
+
+    try {
+      const smsResults = await runDueSmsCampaignSends();
+      if (smsResults.length > 0) {
+        console.log(`[campaigns] sent ${smsResults.filter((r) => !r.error).length}/${smsResults.length} texts`);
+      }
+    } catch (err) {
+      console.error("[campaigns] sms background run failed:", err);
     }
   }, AUTO_RUN_INTERVAL_MS);
 }

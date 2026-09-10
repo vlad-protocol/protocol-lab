@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// Carrier-required opt-out keywords for A2P 10DLC/marketing SMS. Checked
+// case-insensitively against the whole trimmed message body.
+const STOP_KEYWORDS = new Set(["stop", "unsubscribe", "cancel", "end", "quit", "optout", "opt out"]);
+
 // Registered as the "A message comes in" webhook on your Twilio number.
 // Matches the sender's number to a Contact and logs it — this is how a
 // client texting your business number shows up in their CRM thread
-// automatically, without anyone having to log it by hand.
+// automatically, without anyone having to log it by hand. Also checks for
+// a STOP-style opt-out keyword, in which case the number is suppressed
+// from all future mass SMS campaigns (see src/lib/campaigns.ts) instead
+// of being logged as an ordinary inbound text.
 export async function POST(req: Request) {
   const form = await req.formData();
   const from = form.get("From") as string | null;
@@ -12,18 +19,27 @@ export async function POST(req: Request) {
   const messageSid = form.get("MessageSid") as string | null;
 
   if (from && body) {
-    const contact = await prisma.contact.findFirst({ where: { phone: from } });
-    if (contact) {
-      await prisma.interaction.create({
-        data: {
-          contactId: contact.id,
-          type: "TEXT",
-          direction: "INBOUND",
-          body,
-          phoneNumber: from,
-          externalId: messageSid,
-        },
+    const normalized = body.trim().toLowerCase();
+    if (STOP_KEYWORDS.has(normalized)) {
+      await prisma.smsSuppression.upsert({
+        where: { phone: from },
+        update: { reason: "UNSUBSCRIBE" },
+        create: { phone: from, reason: "UNSUBSCRIBE" },
       });
+    } else {
+      const contact = await prisma.contact.findFirst({ where: { phone: from } });
+      if (contact) {
+        await prisma.interaction.create({
+          data: {
+            contactId: contact.id,
+            type: "TEXT",
+            direction: "INBOUND",
+            body,
+            phoneNumber: from,
+            externalId: messageSid,
+          },
+        });
+      }
     }
   }
 

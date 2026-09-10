@@ -57,6 +57,8 @@ model User {
   cfoRecurringBills   CFORecurringBill[]
   cfoGoals            CFOGoal[]
   cfoDebts            CFODebt[]
+  emailCampaigns      EmailCampaign[]
+  smsCampaigns        SmsCampaign[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -176,6 +178,8 @@ model Contact {
   recordings     Recording[]
   meetingNotes   MeetingNote[]
   adCampaigns    AdCampaign[]
+  emailSends     EmailSend[]
+  smsSends       SmsSend[]
 
   @@index([email])
   @@index([phone])
@@ -189,6 +193,7 @@ enum InteractionType {
   CALL
   TEXT
   NOTE
+  VIDEO_CALL
 }
 
 enum InteractionDirection {
@@ -723,3 +728,131 @@ model CFODebt {
 // Protocol CRM's sponsor/venue pipeline (formerly its own ProtocolLead
 // model + separate "People" CRM) now lives entirely on Contact above —
 // see the ContactType/LeadStatus/LeadPriority enums and the `type` field.
+
+// --- Mass campaigns: bulk email & SMS blasts ("build my own Brevo") -----
+//
+// Targeting is ad hoc against the live Contact table (type/status/search),
+// not a saved segment — there's no separate "list" model. A campaign
+// snapshots its matching contacts into *Send rows the moment it's sent, so
+// the record of who actually got it doesn't drift if the CRM changes
+// later. Sends are drained a batch at a time on the same 15-minute tick as
+// Automations/Sequences (see instrumentation.ts) to stay under Amazon
+// SES's/Twilio's sending-rate limits, especially while a new SES account
+// is still in its sandbox/ramp-up period.
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELED
+}
+
+enum SendStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+  COMPLAINED
+}
+
+model EmailCampaign {
+  id      String         @id @default(cuid())
+  name    String
+  subject String
+  body    String // HTML/plain body — supports {{contactName}}, {{companyName}} merge fields; an unsubscribe link is appended automatically at send time
+  status  CampaignStatus @default(DRAFT)
+
+  // Ad hoc audience filter, matching the same shape as the CRM's own
+  // filters: { types?: ContactType[], statuses?: LeadStatus[], search?: string }
+  audienceFilter Json?
+
+  scheduledAt DateTime?
+  sentAt      DateTime?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sends EmailSend[]
+
+  @@index([status, scheduledAt])
+}
+
+model EmailSend {
+  id         String     @id @default(cuid())
+  campaignId String
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  toEmail    String // snapshot — survives the contact being edited/deleted later
+  toName     String?
+  status     SendStatus @default(PENDING)
+  externalId String? // SES message id
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([toEmail])
+}
+
+// One row per email address that must never receive a campaign again —
+// they clicked "unsubscribe", or SES reported a bounce/complaint for them
+// via the SNS webhook (see /api/webhooks/ses).
+model EmailSuppression {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String // UNSUBSCRIBE | BOUNCE | COMPLAINT
+  createdAt DateTime @default(now())
+}
+
+model SmsCampaign {
+  id     String         @id @default(cuid())
+  name   String
+  body   String // supports {{contactName}}, {{companyName}} merge fields; "Reply STOP to unsubscribe" is appended automatically
+  status CampaignStatus @default(DRAFT)
+
+  audienceFilter Json?
+
+  scheduledAt DateTime?
+  sentAt      DateTime?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sends SmsSend[]
+
+  @@index([status, scheduledAt])
+}
+
+model SmsSend {
+  id         String     @id @default(cuid())
+  campaignId String
+  campaign   SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  toPhone    String
+  toName     String?
+  status     SendStatus @default(PENDING)
+  externalId String? // Twilio message sid
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([toPhone])
+}
+
+// Phone numbers that texted STOP/UNSUBSCRIBE/CANCEL (see the sms-inbound
+// webhook) — checked before every future SMS campaign send.
+model SmsSuppression {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  reason    String // UNSUBSCRIBE
+  createdAt DateTime @default(now())
+}
