@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Plus, Trash2, Search, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Plus, Trash2, Search, Upload, FileSpreadsheet } from "lucide-react";
 
 type Member = {
   id: string;
@@ -18,6 +18,7 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -58,6 +59,7 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
           onClick={() => {
             setShowAdd((s) => !s);
             setShowBulk(false);
+            setShowImport(false);
           }}
           className="flex items-center gap-1 rounded-full bg-[var(--hq-accent)] px-4 py-1.5 text-sm font-medium text-white"
         >
@@ -67,10 +69,21 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
           onClick={() => {
             setShowBulk((s) => !s);
             setShowAdd(false);
+            setShowImport(false);
           }}
           className="flex items-center gap-1 rounded-full border border-[var(--hq-card-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--hq-text)]"
         >
           <Upload className="h-3.5 w-3.5" /> {showBulk ? "Close" : "Bulk add"}
+        </button>
+        <button
+          onClick={() => {
+            setShowImport((s) => !s);
+            setShowAdd(false);
+            setShowBulk(false);
+          }}
+          className="flex items-center gap-1 rounded-full border border-[var(--hq-card-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--hq-text)]"
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5" /> {showImport ? "Close" : "Import CSV/Excel"}
         </button>
       </div>
 
@@ -88,6 +101,17 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
           onAdded={() => {
             setShowBulk(false);
             // Re-fetch the full list — bulk add can create many rows at once.
+            fetch("/api/protocol-list")
+              .then((r) => r.json())
+              .then((d) => d.members && setMembers(d.members));
+          }}
+        />
+      )}
+
+      {showImport && (
+        <FileImport
+          onAdded={() => {
+            setShowImport(false);
             fetch("/api/protocol-list")
               .then((r) => r.json())
               .then((d) => d.members && setMembers(d.members));
@@ -250,6 +274,59 @@ function BulkAdd({ onAdded }: { onAdded: () => void }) {
       />
       {result && <p className="text-sm text-[var(--hq-text)]">{result}</p>}
       <button disabled={busy} className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+        Import
+      </button>
+    </form>
+  );
+}
+
+function FileImport({ onAdded }: { onAdded: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch("/api/protocol-list/import-file", { method: "POST", body });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(d.error || "Failed to import.");
+      return;
+    }
+    setResult(`Added ${d.added}${d.skipped ? `, skipped ${d.skipped} (no email or phone found)` : ""}.`);
+    setFile(null);
+    if (inputRef.current) inputRef.current.value = "";
+    onAdded();
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-4 space-y-2 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
+      <p className="text-xs text-[var(--hq-text-muted)]">
+        Upload a .csv or Excel (.xlsx/.xls) file exported from Brevo or any other tool. We'll look for
+        columns named something like "Name," "Email," and "Phone" — if none of those are recognized, or
+        there's no header row, each cell is checked directly (a valid email or phone number is picked up
+        either way).
+      </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <input
+        ref={inputRef}
+        type="file"
+        required
+        accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+        className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+      />
+      {result && <p className="text-sm text-[var(--hq-text)]">{result}</p>}
+      <button disabled={busy || !file} className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
         Import
       </button>
     </form>

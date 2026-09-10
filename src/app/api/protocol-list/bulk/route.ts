@@ -2,17 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+()\-.\s\d]{7,20}$/;
-
-function classify(part: string): { email?: string; phone?: string; name?: string } {
-  const trimmed = part.trim();
-  if (!trimmed) return {};
-  if (EMAIL_RE.test(trimmed)) return { email: trimmed.toLowerCase() };
-  if (PHONE_RE.test(trimmed) && trimmed.replace(/\D/g, "").length >= 7) return { phone: trimmed };
-  return { name: trimmed };
-}
+import { classify } from "@/lib/protocol-list-import";
 
 // Bulk-adds Protocol List members from pasted text — one person per line.
 // Flexible on format: a bare list of emails, a bare list of phone numbers,
