@@ -18,6 +18,7 @@ export async function register() {
   if (g.__hqAutomationTimer) return;
 
   const { runDueAutomations } = await import("@/lib/automations");
+  const { runDueSequenceSteps } = await import("@/lib/sequences");
 
   g.__hqAutomationTimer = setInterval(async () => {
     try {
@@ -27,6 +28,20 @@ export async function register() {
       }
     } catch (err) {
       console.error("[automations] background run failed:", err);
+    }
+
+    try {
+      // Same tick, same process — sends whatever follow-up sequence step is
+      // due for any active enrollment. See src/lib/sequences.ts.
+      const seqResults = await runDueSequenceSteps();
+      if (seqResults.length > 0) {
+        console.log(
+          `[sequences] sent ${seqResults.filter((r) => !r.error).length}/${seqResults.length}:`,
+          seqResults.map((r) => (r.error ? `${r.contactName} (failed: ${r.error})` : r.contactName)).join(", ")
+        );
+      }
+    } catch (err) {
+      console.error("[sequences] background run failed:", err);
     }
   }, AUTO_RUN_INTERVAL_MS);
 }

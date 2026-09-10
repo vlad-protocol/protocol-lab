@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { listGmailInbox, extractEmailAddress } from "@/lib/integrations/gmail";
+import { pauseEnrollmentsOnReply } from "@/lib/sequences";
 
 export async function GET() {
   const session = await auth();
@@ -74,6 +75,11 @@ export async function GET() {
             };
           }),
         });
+
+        // A real reply from the lead should never get buried under the
+        // next canned follow-up — pause any automated sequence they're on.
+        const repliedContactIds = Array.from(new Set(toCreate.map((m) => m.contact!.id)));
+        await Promise.all(repliedContactIds.map((id) => pauseEnrollmentsOnReply(id)));
       }
     }
 

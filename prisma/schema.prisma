@@ -39,6 +39,7 @@ model User {
   interactions        Interaction[]
   automations         Automation[]
   emailTemplates      EmailTemplate[]
+  emailSequences      EmailSequence[]
   gmailConnection     GmailConnection?
   trainingCheckIns    TrainingCheckIn[]
   shootCards          ShootCard[]
@@ -114,7 +115,16 @@ model Contact {
   createdBy     User?         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt     DateTime      @default(now())
 
-  interactions   Interaction[]
+  // AI-generated read of the email conversation so far — see
+  // /api/contacts/[id]/summarize. Regenerated on demand, not live; if the
+  // lead has replied since summaryGeneratedAt, the panel says so.
+  lastConversationSummary String?
+  suggestedNextStep       String?
+  nextFollowUpDate        DateTime?
+  summaryGeneratedAt      DateTime?
+
+  interactions        Interaction[]
+  sequenceEnrollments SequenceEnrollment[]
   shootCards     ShootCard[]
   labEntries     StudioEntry[]
   calendarEvents CalendarEvent[]
@@ -199,6 +209,66 @@ model EmailTemplate {
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
+}
+
+// --- Lead nurture: multi-step automated follow-up sequences ------------
+//
+// A sequence is an ordered list of emails ("touch 1", "touch 2", ...),
+// each with a delay in days from the one before it (or from enrollment,
+// for the first step). A contact is enrolled by hand from their page —
+// nothing auto-enrolls a lead. The 15-minute tick in instrumentation.ts
+// (same loop that already runs Automations) sends whatever step is due,
+// logs it as a normal outbound Interaction, and advances the enrollment.
+// If the lead replies (an inbound Interaction gets synced for them — see
+// /api/mail/inbox), the enrollment is auto-paused (REPLIED) so a real
+// reply never gets buried under a canned follow-up.
+enum SequenceEnrollmentStatus {
+  ACTIVE
+  PAUSED
+  REPLIED
+  COMPLETED
+  CANCELED
+}
+
+model EmailSequence {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  enabled     Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  steps       EmailSequenceStep[]
+  enrollments SequenceEnrollment[]
+}
+
+model EmailSequenceStep {
+  id         String        @id @default(cuid())
+  sequenceId String
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  order      Int // 0-based position within the sequence
+  delayDays  Int // days after the previous step (or after enrollment, for step 0)
+  subject    String
+  body       String // supports {{contactName}}, {{companyName}}, {{repName}} merge fields
+
+  @@index([sequenceId, order])
+}
+
+model SequenceEnrollment {
+  id          String                   @id @default(cuid())
+  contactId   String
+  contact     Contact                  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sequenceId  String
+  sequence    EmailSequence            @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  status      SequenceEnrollmentStatus @default(ACTIVE)
+  currentStep Int                      @default(0) // index of the NEXT step to send
+  nextSendAt  DateTime?
+  lastSentAt  DateTime?
+  enrolledAt  DateTime                 @default(now())
+
+  @@index([status, nextSendAt])
+  @@index([contactId])
 }
 
 // --- Integrations -----------------------------------------------------

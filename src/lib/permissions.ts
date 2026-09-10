@@ -5,6 +5,7 @@ export const MODULES = [
   { key: "content", label: "Trial Reels" },
   { key: "analytics", label: "Analytics" },
   { key: "people", label: "People (CRM)" },
+  { key: "sequences", label: "Follow-up Sequences (automated lead emails)" },
   { key: "protocol_crm", label: "Protocol CRM (sponsor/venue pipeline)" },
   { key: "mail", label: "Mail" },
   { key: "comms", label: "Comms (texts)" },
