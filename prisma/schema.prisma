@@ -34,7 +34,6 @@ model User {
 
   reels               Reel[]
   stats               WeeklyStat[]
-  contactsAssigned    Contact[]           @relation("AssignedRep")
   contactsCreated     Contact[]           @relation("CreatedBy")
   interactions        Interaction[]
   automations         Automation[]
@@ -92,34 +91,77 @@ model WeeklyStat {
 
 // --- Phase 3/4: CRM + comms ----------------------------------------------
 
-enum ContactStatus {
-  LEAD
-  ACTIVE
+// One CRM: every company/person you're in touch with — regular
+// fence-and-asphalt clients as well as Protocol sponsor/venue leads —
+// lives in this single table, distinguished by `type`. This used to be
+// two separate models (Contact + ProtocolLead) with two separate nav
+// sections; merged into one so there's a single CRM ("Protocol CRM")
+// with one email history, one AI summary, one follow-up sequence system
+// for every kind of lead.
+enum ContactType {
   CLIENT
-  CLOSED
+  SPONSOR
+  VENUE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFYING
+  PROPOSAL_SENT
+  NEGOTIATING
+  FOLLOW_UP_SCHEDULED
+  WON
+  LOST
+  ON_HOLD
+}
+
+enum LeadPriority {
+  HOT
+  WARM
+  COLD
 }
 
 model Contact {
-  id            String        @id @default(cuid())
-  companyName   String?
-  contactName   String
-  title         String? // e.g. "CEO"
-  email         String?
-  phone         String?
-  status        ContactStatus @default(LEAD)
-  tags          String[]      @default([])
-  notes         String?
-  assignedRepId String?
-  assignedRep   User?         @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
-  createdById   String?
-  createdBy     User?         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt     DateTime      @default(now())
+  id     String @id @default(cuid())
+  number Int    @unique @default(autoincrement()) // display id, e.g. "L001"
+
+  companyName String?
+  contactName String
+  title       String? // e.g. "CEO"
+  email       String?
+  phone       String?
+  website     String?
+  industry    String?
+
+  type     ContactType   @default(CLIENT)
+  status   LeadStatus    @default(NEW)
+  priority LeadPriority?
+  tags     String[]      @default([])
+
+  source      String?
+  assignedRep String? // freeform — not everyone touching this has an app login
+
+  dateFirstContacted DateTime?
+  lastContactDate    DateTime?
+  totalTouches        Int       @default(0)
+  eventOpportunity    String?
+  dealValue           Float?
+  followUpOwner       String?
+  notes               String?
+
+  createdById String?
+  createdBy   User?    @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // AI-generated read of the email conversation so far — see
   // /api/contacts/[id]/summarize. Regenerated on demand, not live; if the
-  // lead has replied since summaryGeneratedAt, the panel says so.
+  // lead has replied since summaryGeneratedAt, the panel says so. nextStep
+  // doubles as a manually-editable field (from the old Protocol CRM table)
+  // and the AI's suggested next step — either can set it.
   lastConversationSummary String?
-  suggestedNextStep       String?
+  nextStep                String?
   nextFollowUpDate        DateTime?
   summaryGeneratedAt      DateTime?
 
@@ -135,6 +177,9 @@ model Contact {
 
   @@index([email])
   @@index([phone])
+  @@index([status])
+  @@index([type])
+  @@index([nextFollowUpDate])
 }
 
 enum InteractionType {
@@ -673,70 +718,6 @@ model CFODebt {
   updatedAt      DateTime @updatedAt
 }
 
-// --- Protocol CRM ----------------------------------------------------------
-// A dedicated sponsor/venue partnership pipeline for the Protocol events
-// business — modeled directly on the "Protocol-Sales-Tracker" spreadsheet
-// (Pipeline tab + Dashboard tab). Shared team-wide (like Contact/People),
-// not scoped to one user — Vlad, Marwa, and reps all work the same board.
-
-enum ProtocolLeadType {
-  SPONSOR
-  VENUE
-}
-
-enum ProtocolLeadStatus {
-  NEW
-  CONTACTED
-  QUALIFYING
-  PROPOSAL_SENT
-  NEGOTIATING
-  FOLLOW_UP_SCHEDULED
-  WON
-  LOST
-  ON_HOLD
-}
-
-enum ProtocolLeadPriority {
-  HOT
-  WARM
-  COLD
-}
-
-model ProtocolLead {
-  id     String @id @default(cuid())
-  number Int    @unique @default(autoincrement()) // display id, e.g. "L001"
-
-  companyName String
-  leadType    ProtocolLeadType
-  industry    String?
-
-  contactName  String?
-  contactTitle String?
-  phone        String?
-  email        String?
-  website      String?
-
-  source      String? // Referral, Cold Call, Cold Email, IG, Inbound/Website, Event/Trade Show, Networking, Other
-  assignedRep String? // freeform — reps aren't all app logins (Vlad, Marwa, Santiago, Sonya, ...)
-  priority    ProtocolLeadPriority?
-  status      ProtocolLeadStatus    @default(NEW)
-
-  dateFirstContacted      DateTime?
-  lastContactDate         DateTime?
-  totalTouches            Int       @default(0)
-  lastConversationSummary String?
-  nextStep                String?
-  nextFollowUpDate        DateTime?
-  followUpOwner           String?
-
-  eventOpportunity String?
-  dealValue        Float?
-  notes            String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([leadType])
-  @@index([nextFollowUpDate])
-}
+// Protocol CRM's sponsor/venue pipeline (formerly its own ProtocolLead
+// model + separate "People" CRM) now lives entirely on Contact above —
+// see the ContactType/LeadStatus/LeadPriority enums and the `type` field.

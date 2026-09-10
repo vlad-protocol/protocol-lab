@@ -1,6 +1,6 @@
 import { Handshake } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
-import { getOrSeedProtocolLeads } from "@/lib/protocol-crm-server";
 import { ProtocolCRMView } from "./protocol-crm-view";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function ProtocolCRMPage() {
   await requireAccess("protocol_crm");
 
-  const leads = await getOrSeedProtocolLeads();
+  const leads = await prisma.contact.findMany({ orderBy: { number: "asc" } });
 
   return (
     <div className="max-w-7xl">
@@ -18,8 +18,9 @@ export default async function ProtocolCRMPage() {
           Protocol CRM
         </h1>
         <p className="mt-1 text-sm text-[var(--hq-text-muted)]">
-          Sponsor and venue partnership pipeline for Protocol — one row per company, shared with the whole team.
-          Click any cell to update it as you go.
+          Every company and contact you're in touch with — clients, sponsors, and venues —
+          one shared pipeline for the whole team. Click any cell to update it, or open a
+          lead for its full email history, AI summary, and follow-up sequence.
         </p>
       </div>
 

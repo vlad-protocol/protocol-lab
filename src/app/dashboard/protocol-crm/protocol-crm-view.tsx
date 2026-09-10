@@ -1,15 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
 import {
+  type Lead,
   type LeadPriority,
   type LeadStatus,
-  type ProtocolLead,
   OPEN_STATUSES,
   PRIORITY_STYLE,
   STATUS_OPTIONS,
   STATUS_STYLE,
+  TYPE_STYLE,
   money,
 } from "./types";
 import { AddLeadButton } from "./add-lead-button";
@@ -43,7 +45,7 @@ function fmtDateInput(dateStr: string | null) {
   return dateStr.slice(0, 10);
 }
 
-export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[] }) {
+export function ProtocolCRMView({ initialLeads }: { initialLeads: Lead[] }) {
   const [leads, setLeads] = useState(initialLeads);
   const [openId, setOpenId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -53,8 +55,9 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
   const [repFilter, setRepFilter] = useState<string>("ALL");
 
   const stats = useMemo(() => {
-    const sponsors = leads.filter((l) => l.leadType === "SPONSOR").length;
-    const venues = leads.filter((l) => l.leadType === "VENUE").length;
+    const clients = leads.filter((l) => l.type === "CLIENT").length;
+    const sponsors = leads.filter((l) => l.type === "SPONSOR").length;
+    const venues = leads.filter((l) => l.type === "VENUE").length;
     const won = leads.filter((l) => l.status === "WON").length;
     const active = leads.filter((l) => OPEN_STATUSES.includes(l.status)).length;
 
@@ -85,7 +88,7 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
       byRep.set(rep, entry);
     }
 
-    return { sponsors, venues, won, active, overdue, dueToday, dueWeek, byStatus, byRep };
+    return { clients, sponsors, venues, won, active, overdue, dueToday, dueWeek, byStatus, byRep };
   }, [leads]);
 
   const reps = useMemo(() => {
@@ -99,10 +102,10 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
     return leads.filter((l) => {
       if (statusFilter === "OPEN" && !OPEN_STATUSES.includes(l.status)) return false;
       if (statusFilter !== "OPEN" && statusFilter !== "ALL" && l.status !== statusFilter) return false;
-      if (typeFilter !== "ALL" && l.leadType !== typeFilter) return false;
+      if (typeFilter !== "ALL" && l.type !== typeFilter) return false;
       if (repFilter !== "ALL" && (l.assignedRep || "Unassigned") !== repFilter) return false;
       if (q) {
-        const hay = `${l.companyName} ${l.contactName || ""} ${l.industry || ""} ${l.eventOpportunity || ""}`.toLowerCase();
+        const hay = `${l.companyName || ""} ${l.contactName || ""} ${l.industry || ""} ${l.eventOpportunity || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -111,21 +114,21 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
 
   async function patch(id: string, data: Record<string, unknown>) {
     setSavingId(id);
-    const res = await fetch(`/api/protocol-leads/${id}`, {
+    const res = await fetch(`/api/contacts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     setSavingId(null);
     if (res.ok) {
-      const { lead } = await res.json();
-      setLeads((prev) => prev.map((l) => (l.id === id ? lead : l)));
+      const { contact } = await res.json();
+      setLeads((prev) => prev.map((l) => (l.id === id ? contact : l)));
     }
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this lead? This can't be undone.")) return;
-    const res = await fetch(`/api/protocol-leads/${id}`, { method: "DELETE" });
+    if (!confirm("Delete this lead and its whole history? This can't be undone.")) return;
+    const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" });
     if (res.ok) setLeads((prev) => prev.filter((l) => l.id !== id));
   }
 
@@ -134,11 +137,11 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
       {/* Dashboard */}
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Active leads" value={stats.active} />
+        <StatCard label="Clients" value={stats.clients} />
         <StatCard label="Sponsors" value={stats.sponsors} />
         <StatCard label="Venues" value={stats.venues} />
         <StatCard label="Deals won" value={stats.won} accent="text-emerald-600" />
         <StatCard label="Overdue follow-ups" value={stats.overdue} accent={stats.overdue > 0 ? "text-red-600" : undefined} />
-        <StatCard label="Due this week" value={stats.dueToday + stats.dueWeek} accent={stats.dueToday + stats.dueWeek > 0 ? "text-amber-600" : undefined} />
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -198,7 +201,8 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
           onChange={(e) => setTypeFilter(e.target.value)}
           className="rounded-lg border border-[var(--hq-card-border)] bg-white px-2 py-2 text-sm"
         >
-          <option value="ALL">Sponsors + Venues</option>
+          <option value="ALL">All types</option>
+          <option value="CLIENT">Clients</option>
           <option value="SPONSOR">Sponsors</option>
           <option value="VENUE">Venues</option>
         </select>
@@ -249,9 +253,15 @@ export function ProtocolCRMView({ initialLeads }: { initialLeads: ProtocolLead[]
                       {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     </td>
                     <td className="px-3 py-2.5">
-                      <span className="font-medium text-[var(--hq-text)]">{l.companyName}</span>
-                      <span className="ml-1.5 rounded bg-[var(--hq-canvas)] px-1 py-0.5 text-[10px] uppercase text-[var(--hq-text-muted)]">
-                        {l.leadType}
+                      <Link
+                        href={`/dashboard/protocol-crm/${l.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-medium text-[var(--hq-text)] hover:underline"
+                      >
+                        {l.companyName || l.contactName}
+                      </Link>
+                      <span className={`ml-1.5 rounded px-1 py-0.5 text-[10px] uppercase ${TYPE_STYLE[l.type]}`}>
+                        {l.type}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-[var(--hq-text-muted)]">{l.contactName || "—"}</td>
@@ -350,25 +360,28 @@ function LeadDetail({
   onDelete,
   saving,
 }: {
-  lead: ProtocolLead;
+  lead: Lead;
   onPatch: (data: Record<string, unknown>) => void;
   onDelete: () => void;
   saving: boolean;
 }) {
   const [draft, setDraft] = useState(lead);
 
-  function commit(field: keyof ProtocolLead) {
+  function commit(field: keyof Lead) {
     if (draft[field] !== lead[field]) onPatch({ [field]: draft[field] });
   }
 
   return (
     <div>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Field label="Contact name">
+          <input className={inputCls} value={draft.contactName || ""} onChange={(e) => setDraft({ ...draft, contactName: e.target.value })} onBlur={() => commit("contactName")} />
+        </Field>
         <Field label="Industry / category">
           <input className={inputCls} value={draft.industry || ""} onChange={(e) => setDraft({ ...draft, industry: e.target.value })} onBlur={() => commit("industry")} />
         </Field>
         <Field label="Contact title">
-          <input className={inputCls} value={draft.contactTitle || ""} onChange={(e) => setDraft({ ...draft, contactTitle: e.target.value })} onBlur={() => commit("contactTitle")} />
+          <input className={inputCls} value={draft.title || ""} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => commit("title")} />
         </Field>
         <Field label="Phone">
           <input className={inputCls} value={draft.phone || ""} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} onBlur={() => commit("phone")} />
@@ -418,10 +431,15 @@ function LeadDetail({
         </Field>
       </div>
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-[11px] text-[var(--hq-text-muted)]">{saving ? "Saving…" : " "}</span>
-        <button onClick={onDelete} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-600 hover:bg-red-50">
-          <Trash2 className="h-3.5 w-3.5" /> Delete lead
-        </button>
+        <Link href={`/dashboard/protocol-crm/${lead.id}`} className="text-xs font-medium text-[var(--hq-accent)] hover:underline">
+          Open full profile (email history, AI summary, sequences) →
+        </Link>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-[var(--hq-text-muted)]">{saving ? "Saving…" : " "}</span>
+          <button onClick={onDelete} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+            <Trash2 className="h-3.5 w-3.5" /> Delete lead
+          </button>
+        </div>
       </div>
     </div>
   );

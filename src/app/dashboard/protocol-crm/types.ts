@@ -1,4 +1,4 @@
-export type LeadType = "SPONSOR" | "VENUE";
+export type LeadType = "CLIENT" | "SPONSOR" | "VENUE";
 export type LeadPriority = "HOT" | "WARM" | "COLD";
 export type LeadStatus =
   | "NEW"
@@ -11,14 +11,14 @@ export type LeadStatus =
   | "LOST"
   | "ON_HOLD";
 
-export type ProtocolLead = {
+export type Lead = {
   id: string;
   number: number;
-  companyName: string;
-  leadType: LeadType;
+  companyName: string | null;
+  contactName: string;
+  type: LeadType;
   industry: string | null;
-  contactName: string | null;
-  contactTitle: string | null;
+  title: string | null;
   phone: string | null;
   email: string | null;
   website: string | null;
@@ -36,6 +36,18 @@ export type ProtocolLead = {
   eventOpportunity: string | null;
   dealValue: number | null;
   notes: string | null;
+};
+
+export const TYPE_OPTIONS: { value: LeadType; label: string }[] = [
+  { value: "CLIENT", label: "Client" },
+  { value: "SPONSOR", label: "Sponsor" },
+  { value: "VENUE", label: "Venue" },
+];
+
+export const TYPE_STYLE: Record<LeadType, string> = {
+  CLIENT: "bg-emerald-50 text-emerald-700",
+  SPONSOR: "bg-violet-50 text-violet-700",
+  VENUE: "bg-blue-50 text-blue-700",
 };
 
 export const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [

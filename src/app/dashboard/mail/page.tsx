@@ -46,7 +46,7 @@ export default async function MailPage() {
             {emails.map((e) => (
               <Link
                 key={e.id}
-                href={`/dashboard/people/${e.contact.id}`}
+                href={`/dashboard/protocol-crm/${e.contact.id}`}
                 className="block rounded-xl border border-[var(--hq-card-border)] bg-white p-4 hover:border-[var(--hq-accent)]"
               >
                 <div className="flex items-center justify-between">

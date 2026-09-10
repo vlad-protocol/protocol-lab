@@ -10,7 +10,7 @@ import { startRecordedCall } from "@/lib/integrations/twilio";
 // consent rules vary by location, so confirm what applies to you.
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

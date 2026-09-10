@@ -2,29 +2,29 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import type { ProtocolLead } from "./types";
+import type { Lead } from "./types";
 
-export function AddLeadButton({ onCreated }: { onCreated: (lead: ProtocolLead) => void }) {
+export function AddLeadButton({ onCreated }: { onCreated: (lead: Lead) => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [companyName, setCompanyName] = useState("");
-  const [leadType, setLeadType] = useState("SPONSOR");
+  const [type, setType] = useState("CLIENT");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName.trim()) return;
     setSubmitting(true);
-    const res = await fetch("/api/protocol-leads", {
+    const res = await fetch("/api/contacts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ companyName: companyName.trim(), leadType }),
+      body: JSON.stringify({ companyName: companyName.trim(), type }),
     });
     setSubmitting(false);
     if (res.ok) {
-      const { lead } = await res.json();
-      onCreated(lead);
+      const { contact } = await res.json();
+      onCreated(contact);
       setCompanyName("");
-      setLeadType("SPONSOR");
+      setType("CLIENT");
       setOpen(false);
     }
   }
@@ -55,9 +55,10 @@ export function AddLeadButton({ onCreated }: { onCreated: (lead: ProtocolLead) =
               />
               <select
                 className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
-                value={leadType}
-                onChange={(e) => setLeadType(e.target.value)}
+                value={type}
+                onChange={(e) => setType(e.target.value)}
               >
+                <option value="CLIENT">Client</option>
                 <option value="SPONSOR">Sponsor</option>
                 <option value="VENUE">Venue</option>
               </select>

@@ -9,7 +9,7 @@ const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -102,7 +102,7 @@ followUpWeeks must be exactly one of: 0, 1, 2, or 3. Use 0 only if no further fo
     where: { id },
     data: {
       lastConversationSummary: parsed.summary,
-      suggestedNextStep: parsed.nextStep,
+      nextStep: parsed.nextStep,
       nextFollowUpDate,
       summaryGeneratedAt: new Date(),
     },

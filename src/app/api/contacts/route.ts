@@ -5,13 +5,12 @@ import { canAccess } from "@/lib/permissions";
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const contacts = await prisma.contact.findMany({
     include: {
-      assignedRep: { select: { id: true, name: true, email: true } },
       interactions: {
         orderBy: { occurredAt: "desc" },
         take: 1,
@@ -27,39 +26,37 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await req.json();
-  const { companyName, contactName, title, email, phone, status, tags, notes, assignedRepId } =
-    body as {
-      companyName?: string;
-      contactName?: string;
-      title?: string;
-      email?: string;
-      phone?: string;
-      status?: string;
-      tags?: string[];
-      notes?: string;
-      assignedRepId?: string;
-    };
+  const { companyName, contactName, type, title, email, phone, notes } = body as {
+    companyName?: string;
+    contactName?: string;
+    type?: string;
+    title?: string;
+    email?: string;
+    phone?: string;
+    notes?: string;
+  };
 
-  if (!contactName) {
-    return NextResponse.json({ error: "contactName is required." }, { status: 400 });
+  if (!companyName && !contactName) {
+    return NextResponse.json({ error: "companyName or contactName is required." }, { status: 400 });
   }
 
   const contact = await prisma.contact.create({
     data: {
       companyName: companyName || null,
-      contactName,
+      // A lead can be added with just a company name (e.g. a sponsor
+      // prospect with no known contact person yet) — contactName is
+      // required on the model, so fall back to the company name.
+      contactName: contactName || companyName!,
+      type: (type as "CLIENT" | "SPONSOR" | "VENUE") || "CLIENT",
       title: title || null,
       email: email || null,
       phone: phone || null,
-      status: (status as "LEAD" | "ACTIVE" | "CLIENT" | "CLOSED") || "LEAD",
-      tags: tags || [],
       notes: notes || null,
-      assignedRepId: assignedRepId || session.user.id,
       createdById: session.user.id,
     },
   });

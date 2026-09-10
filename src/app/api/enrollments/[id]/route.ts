@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 // Pause / resume / cancel one contact's enrollment in a sequence.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;

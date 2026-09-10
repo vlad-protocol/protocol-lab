@@ -62,7 +62,7 @@ export default async function CommsPage() {
         {interactions.map((i) => (
           <Link
             key={i.id}
-            href={`/dashboard/people/${i.contact.id}`}
+            href={`/dashboard/protocol-crm/${i.contact.id}`}
             className="flex items-start gap-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-4 hover:border-[var(--hq-accent)]"
           >
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--hq-accent-soft)] text-[var(--hq-accent)]">

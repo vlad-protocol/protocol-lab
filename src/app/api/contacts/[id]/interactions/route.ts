@@ -9,7 +9,7 @@ import { canAccess } from "@/lib/permissions";
 // routes instead; this is the "log it yourself" fallback.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user || !canAccess(session.user, "people")) {
+  if (!session?.user || !canAccess(session.user, "protocol_crm")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
