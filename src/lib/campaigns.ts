@@ -6,13 +6,17 @@ import type { Prisma } from "@prisma/client";
 
 // --- Shared audience filter -------------------------------------------
 //
-// Mass campaigns target the live CRM ad hoc — no saved "segment" model.
-// The filter shape matches the CRM's own list filters so it feels
-// familiar: pick some types/statuses and/or a free-text search.
+// A campaign targets one of two audiences, ad hoc — no saved "segment"
+// model for either:
+//  - "crm": the Protocol CRM (sponsors/venues/clients), filterable by
+//    type/pipeline stage, same shape as the CRM's own list filters.
+//  - "list": the Protocol List (the free-workout/event crowd — see
+//    ProtocolListMember) — no filters, just everyone on it.
 
 export type AudienceFilter = {
-  types?: string[]; // ContactType values; empty/omitted = all
-  statuses?: string[]; // LeadStatus values; empty/omitted = all
+  source?: "crm" | "list"; // omitted = "crm", for backward compatibility with campaigns created before Protocol List existed
+  types?: string[]; // ContactType values; CRM only; empty/omitted = all
+  statuses?: string[]; // LeadStatus values; CRM only; empty/omitted = all
 };
 
 function audienceWhere(filter: AudienceFilter | null | undefined) {
@@ -26,12 +30,18 @@ function audienceWhere(filter: AudienceFilter | null | undefined) {
   return where;
 }
 
+function isListSource(filter: AudienceFilter | null | undefined) {
+  return filter?.source === "list";
+}
+
 export async function previewEmailAudience(filter: AudienceFilter | null | undefined) {
   const [matching, suppressions] = await Promise.all([
-    prisma.contact.findMany({
-      where: { ...audienceWhere(filter), email: { not: null } },
-      select: { email: true },
-    }),
+    isListSource(filter)
+      ? prisma.protocolListMember.findMany({ where: { email: { not: null } }, select: { email: true } })
+      : prisma.contact.findMany({
+          where: { ...audienceWhere(filter), email: { not: null } },
+          select: { email: true },
+        }),
     prisma.emailSuppression.findMany({ select: { email: true } }),
   ]);
   const suppressed = new Set(suppressions.map((s) => s.email.toLowerCase()));
@@ -48,10 +58,12 @@ export async function previewEmailAudience(filter: AudienceFilter | null | undef
 
 export async function previewSmsAudience(filter: AudienceFilter | null | undefined) {
   const [matching, suppressions] = await Promise.all([
-    prisma.contact.findMany({
-      where: { ...audienceWhere(filter), phone: { not: null } },
-      select: { phone: true },
-    }),
+    isListSource(filter)
+      ? prisma.protocolListMember.findMany({ where: { phone: { not: null } }, select: { phone: true } })
+      : prisma.contact.findMany({
+          where: { ...audienceWhere(filter), phone: { not: null } },
+          select: { phone: true },
+        }),
     prisma.smsSuppression.findMany({ select: { phone: true } }),
   ]);
   const suppressed = new Set(suppressions.map((s) => s.phone));
@@ -121,20 +133,29 @@ export async function queueEmailCampaign(campaignId: string) {
   const campaign = await prisma.emailCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error("Campaign not found.");
   const filter = (campaign.audienceFilter as AudienceFilter | null) || null;
+  const fromList = isListSource(filter);
 
-  const [contacts, suppressions] = await Promise.all([
-    prisma.contact.findMany({ where: { ...audienceWhere(filter), email: { not: null } } }),
+  const [recipients, suppressions] = await Promise.all([
+    fromList
+      ? prisma.protocolListMember.findMany({ where: { email: { not: null } } })
+      : prisma.contact.findMany({ where: { ...audienceWhere(filter), email: { not: null } } }),
     prisma.emailSuppression.findMany({ select: { email: true } }),
   ]);
   const suppressed = new Set(suppressions.map((s) => s.email.toLowerCase()));
   const seen = new Set<string>();
 
   const rows: Prisma.EmailSendCreateManyInput[] = [];
-  for (const c of contacts) {
-    const email = (c.email || "").toLowerCase().trim();
+  for (const r of recipients) {
+    const email = (r.email || "").toLowerCase().trim();
     if (!email || seen.has(email) || suppressed.has(email)) continue;
     seen.add(email);
-    rows.push({ campaignId, contactId: c.id, toEmail: c.email!, toName: c.contactName });
+    if (fromList) {
+      const member = r as { id: string; email: string | null; name: string | null };
+      rows.push({ campaignId, listMemberId: member.id, toEmail: member.email!, toName: member.name });
+    } else {
+      const contact = r as { id: string; email: string | null; contactName: string };
+      rows.push({ campaignId, contactId: contact.id, toEmail: contact.email!, toName: contact.contactName });
+    }
   }
 
   await prisma.$transaction([
@@ -151,20 +172,29 @@ export async function queueSmsCampaign(campaignId: string) {
   const campaign = await prisma.smsCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error("Campaign not found.");
   const filter = (campaign.audienceFilter as AudienceFilter | null) || null;
+  const fromList = isListSource(filter);
 
-  const [contacts, suppressions] = await Promise.all([
-    prisma.contact.findMany({ where: { ...audienceWhere(filter), phone: { not: null } } }),
+  const [recipients, suppressions] = await Promise.all([
+    fromList
+      ? prisma.protocolListMember.findMany({ where: { phone: { not: null } } })
+      : prisma.contact.findMany({ where: { ...audienceWhere(filter), phone: { not: null } } }),
     prisma.smsSuppression.findMany({ select: { phone: true } }),
   ]);
   const suppressed = new Set(suppressions.map((s) => s.phone));
   const seen = new Set<string>();
 
   const rows: Prisma.SmsSendCreateManyInput[] = [];
-  for (const c of contacts) {
-    const phone = (c.phone || "").trim();
+  for (const r of recipients) {
+    const phone = (r.phone || "").trim();
     if (!phone || seen.has(phone) || suppressed.has(phone)) continue;
     seen.add(phone);
-    rows.push({ campaignId, contactId: c.id, toPhone: c.phone!, toName: c.contactName });
+    if (fromList) {
+      const member = r as { id: string; phone: string | null; name: string | null };
+      rows.push({ campaignId, listMemberId: member.id, toPhone: member.phone!, toName: member.name });
+    } else {
+      const contact = r as { id: string; phone: string | null; contactName: string };
+      rows.push({ campaignId, contactId: contact.id, toPhone: contact.phone!, toName: contact.contactName });
+    }
   }
 
   await prisma.$transaction([
@@ -192,7 +222,7 @@ export async function runDueEmailCampaignSends(baseUrl: string) {
 
   const pending = await prisma.emailSend.findMany({
     where: { status: "PENDING", campaign: { status: "SENDING" } },
-    include: { campaign: true, contact: true },
+    include: { campaign: true, contact: true, listMember: true },
     take: EMAIL_BATCH_PER_TICK,
     orderBy: { createdAt: "asc" },
   });
@@ -201,15 +231,12 @@ export async function runDueEmailCampaignSends(baseUrl: string) {
 
   for (const send of pending) {
     try {
-      const subject = fillTemplate(send.campaign.subject, {
-        contactName: send.contact?.contactName || send.toName || "",
+      const nameCtx = {
+        contactName: send.contact?.contactName || send.listMember?.name || send.toName || "",
         companyName: send.contact?.companyName || null,
-      });
-      const bodyHtml =
-        fillTemplate(send.campaign.body, {
-          contactName: send.contact?.contactName || send.toName || "",
-          companyName: send.contact?.companyName || null,
-        }) + unsubscribeFooterHtml(baseUrl, send.toEmail);
+      };
+      const subject = fillTemplate(send.campaign.subject, nameCtx);
+      const bodyHtml = fillTemplate(send.campaign.body, nameCtx) + unsubscribeFooterHtml(baseUrl, send.toEmail);
 
       const messageId = await sendSesEmail(send.toEmail, subject, bodyHtml);
       await prisma.emailSend.update({
@@ -246,7 +273,7 @@ export async function runDueSmsCampaignSends() {
 
   const pending = await prisma.smsSend.findMany({
     where: { status: "PENDING", campaign: { status: "SENDING" } },
-    include: { campaign: true, contact: true },
+    include: { campaign: true, contact: true, listMember: true },
     take: SMS_BATCH_PER_TICK,
     orderBy: { createdAt: "asc" },
   });
@@ -255,11 +282,11 @@ export async function runDueSmsCampaignSends() {
 
   for (const send of pending) {
     try {
-      const body =
-        fillTemplate(send.campaign.body, {
-          contactName: send.contact?.contactName || send.toName || "",
-          companyName: send.contact?.companyName || null,
-        }) + "\n\nReply STOP to unsubscribe.";
+      const nameCtx = {
+        contactName: send.contact?.contactName || send.listMember?.name || send.toName || "",
+        companyName: send.contact?.companyName || null,
+      };
+      const body = fillTemplate(send.campaign.body, nameCtx) + "\n\nReply STOP to unsubscribe.";
 
       const sid = await sendSms(send.toPhone, body);
       await prisma.smsSend.update({

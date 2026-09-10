@@ -7,6 +7,7 @@ export const MODULES = [
   { key: "sequences", label: "Follow-up Sequences (automated lead emails)" },
   { key: "protocol_crm", label: "Protocol CRM (leads, sponsors, and venues)" },
   { key: "campaigns", label: "Campaigns (mass email & SMS blasts)" },
+  { key: "protocol_list", label: "Protocol List (event/workout audience)" },
   { key: "mail", label: "Mail" },
   { key: "comms", label: "Comms (texts)" },
   { key: "automations", label: "Automations" },

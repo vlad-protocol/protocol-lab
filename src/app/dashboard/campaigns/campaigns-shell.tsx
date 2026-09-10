@@ -11,7 +11,7 @@ type Campaign = {
   id: string;
   name: string;
   status: "DRAFT" | "SCHEDULED" | "SENDING" | "SENT" | "CANCELED";
-  audienceFilter: { types?: string[]; statuses?: string[] } | null;
+  audienceFilter: { source?: "crm" | "list"; types?: string[]; statuses?: string[] } | null;
   scheduledAt: string | null;
   sentAt: string | null;
   createdAt: string;
@@ -194,6 +194,9 @@ function CampaignCard({
 }
 
 function describeFilter(filter: Campaign["audienceFilter"]) {
+  if (filter?.source === "list") {
+    return "Protocol List — everyone on it";
+  }
   if (!filter || ((!filter.types || filter.types.length === 0) && (!filter.statuses || filter.statuses.length === 0))) {
     return "Everyone in the CRM with an address on file";
   }
@@ -207,6 +210,7 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [source, setSource] = useState<"crm" | "list">("crm");
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
@@ -219,11 +223,17 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
     setPreview(null);
   }
 
+  function setSourceAndReset(next: "crm" | "list") {
+    setSource(next);
+    setPreview(null);
+  }
+
   async function checkAudience() {
+    const filter = source === "list" ? { source: "list" as const } : { source: "crm" as const, types, statuses };
     const res = await fetch("/api/campaigns/audience-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel, filter: { types, statuses } }),
+      body: JSON.stringify({ channel, filter }),
     });
     const d = await res.json().catch(() => null);
     if (d) setPreview(d);
@@ -233,6 +243,7 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const audienceFilter = source === "list" ? { source: "list" as const } : { source: "crm" as const, types, statuses };
     const res = await fetch(`/api/campaigns/${channel}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -240,7 +251,7 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
         name,
         ...(channel === "email" ? { subject } : {}),
         body,
-        audienceFilter: { types, statuses },
+        audienceFilter,
         scheduledAt: scheduledAt || null,
       }),
     });
@@ -286,35 +297,65 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
       />
 
       <div>
-        <p className="text-xs font-semibold text-[var(--hq-text)]">Audience — leave blank for everyone</p>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {TYPE_OPTIONS.map((t) => (
-            <button
-              type="button"
-              key={t.value}
-              onClick={() => toggle(types, setTypes, t.value)}
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                types.includes(t.value) ? "bg-[var(--hq-accent)] text-white" : "bg-neutral-100 text-neutral-600"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <p className="text-xs font-semibold text-[var(--hq-text)]">Audience</p>
+        <div className="mt-1.5 flex rounded-lg border border-[var(--hq-card-border)] bg-neutral-50 p-0.5 w-fit">
+          <button
+            type="button"
+            onClick={() => setSourceAndReset("crm")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              source === "crm" ? "bg-[var(--hq-accent)] text-white" : "text-[var(--hq-text-muted)]"
+            }`}
+          >
+            Protocol CRM
+          </button>
+          <button
+            type="button"
+            onClick={() => setSourceAndReset("list")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              source === "list" ? "bg-[var(--hq-accent)] text-white" : "text-[var(--hq-text-muted)]"
+            }`}
+          >
+            Protocol List
+          </button>
         </div>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {STATUS_OPTIONS.map((s) => (
-            <button
-              type="button"
-              key={s.value}
-              onClick={() => toggle(statuses, setStatuses, s.value)}
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                statuses.includes(s.value) ? "bg-[var(--hq-accent)] text-white" : "bg-neutral-100 text-neutral-600"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+
+        {source === "crm" ? (
+          <>
+            <p className="mt-2 text-xs text-[var(--hq-text-muted)]">Leave blank for everyone in the CRM</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {TYPE_OPTIONS.map((t) => (
+                <button
+                  type="button"
+                  key={t.value}
+                  onClick={() => toggle(types, setTypes, t.value)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    types.includes(t.value) ? "bg-[var(--hq-accent)] text-white" : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  type="button"
+                  key={s.value}
+                  onClick={() => toggle(statuses, setStatuses, s.value)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    statuses.includes(s.value) ? "bg-[var(--hq-accent)] text-white" : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
+            Sends to everyone on the Protocol List (the free-workout/event crowd — manage it on its own page).
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

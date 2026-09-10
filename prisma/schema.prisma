@@ -59,6 +59,7 @@ model User {
   cfoDebts            CFODebt[]
   emailCampaigns      EmailCampaign[]
   smsCampaigns        SmsCampaign[]
+  protocolListMembers ProtocolListMember[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -785,6 +786,8 @@ model EmailSend {
   campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contactId  String?
   contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listMemberId String?
+  listMember    ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
   toEmail    String // snapshot — survives the contact being edited/deleted later
   toName     String?
   status     SendStatus @default(PENDING)
@@ -794,6 +797,7 @@ model EmailSend {
   createdAt  DateTime   @default(now())
 
   @@unique([campaignId, contactId])
+  @@unique([campaignId, listMemberId])
   @@index([campaignId, status])
   @@index([toEmail])
 }
@@ -835,6 +839,8 @@ model SmsSend {
   campaign   SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contactId  String?
   contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listMemberId String?
+  listMember    ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
   toPhone    String
   toName     String?
   status     SendStatus @default(PENDING)
@@ -844,6 +850,7 @@ model SmsSend {
   createdAt  DateTime   @default(now())
 
   @@unique([campaignId, contactId])
+  @@unique([campaignId, listMemberId])
   @@index([campaignId, status])
   @@index([toPhone])
 }
@@ -855,4 +862,38 @@ model SmsSuppression {
   phone     String   @unique
   reason    String // UNSUBSCRIBE
   createdAt DateTime @default(now())
+}
+
+// --- Protocol List: the audience for the free-workout/events crowd ------
+//
+// Completely separate from the Protocol CRM (sponsors/venues/clients) —
+// this is the "everyone who's ever come to a Protocol event or signed up"
+// list, the same audience Brevo's signup-form list used to hold. For now
+// entries are added by hand (one at a time or pasted in bulk); `source`
+// is here so a future public signup form can add rows the same way
+// without a schema change. A person needs at least an email or a phone
+// (not necessarily both) to be useful to a campaign — enforced in the API,
+// not the DB, so a name-only entry can still be added and filled in later.
+enum ListSource {
+  MANUAL
+  FORM
+}
+
+model ProtocolListMember {
+  id     String     @id @default(cuid())
+  name   String?
+  email  String?
+  phone  String?
+  source ListSource @default(MANUAL)
+  notes  String?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  emailSends EmailSend[]
+  smsSends   SmsSend[]
+
+  @@index([email])
+  @@index([phone])
 }
