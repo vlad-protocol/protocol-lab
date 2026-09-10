@@ -1,23 +1,36 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Trash2, Search } from "lucide-react";
+import { Trash2, Search, ShieldCheck, Loader2 } from "lucide-react";
 import type { Category, Transaction } from "./types";
 import { money } from "./types";
+
+type DuplicateGroup = {
+  key: string;
+  count: number;
+  keep: Transaction & { createdAt: string };
+  extras: (Transaction & { createdAt: string })[];
+};
 
 export function HistoryTab({
   categories,
   transactions,
   onDeleted,
+  onManyDeleted,
 }: {
   categories: Category[];
   transactions: Transaction[];
   onDeleted: (id: string) => void;
+  onManyDeleted: (ids: string[]) => void;
 }) {
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "INCOME" | "EXPENSE">("all");
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [dupChecking, setDupChecking] = useState(false);
+  const [dupGroups, setDupGroups] = useState<DuplicateGroup[] | null>(null);
+  const [dupResolving, setDupResolving] = useState(false);
+  const [dupError, setDupError] = useState<string | null>(null);
 
   const categoryLabel = useMemo(() => {
     const m = new Map(categories.map((c) => [c.key, c.label]));
@@ -40,8 +53,84 @@ export function HistoryTab({
     if (res.ok) onDeleted(id);
   }
 
+  async function checkDuplicates() {
+    setDupChecking(true);
+    setDupError(null);
+    const res = await fetch("/api/cfo/transactions/duplicates");
+    const d = await res.json().catch(() => null);
+    setDupChecking(false);
+    if (!res.ok || !d) {
+      setDupError("Couldn't check for duplicates.");
+      return;
+    }
+    setDupGroups(d.duplicateGroups);
+  }
+
+  async function resolveDuplicates() {
+    setDupResolving(true);
+    const res = await fetch("/api/cfo/transactions/duplicates", { method: "DELETE" });
+    const d = await res.json().catch(() => null);
+    setDupResolving(false);
+    if (!res.ok || !d) {
+      setDupError("Couldn't remove duplicates.");
+      return;
+    }
+    const removedIds = (dupGroups || []).flatMap((g) => g.extras.map((e) => e.id));
+    onManyDeleted(removedIds);
+    setDupGroups([]);
+  }
+
+  const extraCount = (dupGroups || []).reduce((sum, g) => sum + g.extras.length, 0);
+
   return (
     <div>
+      <div className="mb-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={checkDuplicates}
+            disabled={dupChecking}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--hq-card-border)] px-3 py-1.5 text-xs font-medium text-[var(--hq-text)] disabled:opacity-60"
+          >
+            {dupChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+            {dupChecking ? "Checking…" : "Check for duplicate transactions"}
+          </button>
+          {dupGroups !== null && dupGroups.length === 0 && (
+            <span className="text-xs text-emerald-600">No duplicates found — everything's clean.</span>
+          )}
+          {dupGroups !== null && dupGroups.length > 0 && (
+            <>
+              <span className="text-xs text-amber-700">
+                Found {dupGroups.length} duplicate transaction{dupGroups.length === 1 ? "" : "s"} ({extraCount}{" "}
+                extra row{extraCount === 1 ? "" : "s"} to remove).
+              </span>
+              <button
+                onClick={resolveDuplicates}
+                disabled={dupResolving}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+              >
+                {dupResolving ? "Removing…" : `Remove ${extraCount} duplicate${extraCount === 1 ? "" : "s"}`}
+              </button>
+            </>
+          )}
+          {dupError && <span className="text-xs text-red-600">{dupError}</span>}
+        </div>
+        {dupGroups !== null && dupGroups.length > 0 && (
+          <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-[var(--hq-card-border)] text-xs">
+            {dupGroups.map((g) => (
+              <div key={g.key} className="border-b border-[var(--hq-card-border)] px-2.5 py-1.5 last:border-0">
+                <span className="font-medium text-[var(--hq-text)]">
+                  {new Date(g.keep.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })} ·{" "}
+                  {money(g.keep.amount)}
+                </span>{" "}
+                <span className="text-[var(--hq-text-muted)]">
+                  {g.keep.description} — appears {g.count}x, keeping 1, removing {g.extras.length}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-1 min-w-[180px] items-center gap-1.5 rounded-lg border border-[var(--hq-card-border)] bg-white px-2.5 py-1.5">
           <Search className="h-3.5 w-3.5 text-neutral-400" />

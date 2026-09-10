@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
+import { dedupKey } from "@/lib/cfo-dedup";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -50,22 +51,53 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No rows to save." }, { status: 400 });
   }
 
-  const created = await prisma.$transaction(
-    rows.map((r) =>
-      prisma.cFOTransaction.create({
-        data: {
+  // Skip rows that already exist (same date, amount, type, and source
+  // text — see cfo-dedup.ts) so re-importing the same CSV or paste twice
+  // doesn't double-count anything. Also de-dupes within this batch, in
+  // case the same line appears twice in one paste/upload.
+  const dates = rows.map((r) => new Date(r.date).getTime()).filter((t) => !Number.isNaN(t));
+  const existing = dates.length
+    ? await prisma.cFOTransaction.findMany({
+        where: {
           userId: session.user.id,
-          date: new Date(r.date),
-          description: r.description,
-          amount: r.amount,
-          type: r.type,
-          category: r.category || "uncategorized",
-          pending: !!r.pending,
-          rawText: r.rawText || null,
+          date: { gte: new Date(Math.min(...dates)), lte: new Date(Math.max(...dates)) },
         },
+        select: { date: true, amount: true, type: true, rawText: true, description: true },
       })
-    )
-  );
+    : [];
+  const existingKeys = new Set(existing.map((t) => dedupKey(t)));
+
+  const uniqueRows: typeof rows = [];
+  const skippedRows: typeof rows = [];
+  const seenInBatch = new Set<string>();
+  for (const r of rows) {
+    const key = dedupKey({ date: new Date(r.date), amount: r.amount, type: r.type, rawText: r.rawText, description: r.description });
+    if (existingKeys.has(key) || seenInBatch.has(key)) {
+      skippedRows.push(r);
+      continue;
+    }
+    seenInBatch.add(key);
+    uniqueRows.push(r);
+  }
+
+  const created = uniqueRows.length
+    ? await prisma.$transaction(
+        uniqueRows.map((r) =>
+          prisma.cFOTransaction.create({
+            data: {
+              userId: session.user.id,
+              date: new Date(r.date),
+              description: r.description,
+              amount: r.amount,
+              type: r.type,
+              category: r.category || "uncategorized",
+              pending: !!r.pending,
+              rawText: r.rawText || null,
+            },
+          })
+        )
+      )
+    : [];
 
   for (const r of rows) {
     if (r.rememberRule && r.matchText && r.category) {
@@ -82,5 +114,9 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ transactions: created });
+  return NextResponse.json({
+    transactions: created,
+    skipped: skippedRows.length,
+    skippedRows: skippedRows.map((r) => ({ date: r.date, description: r.description, amount: r.amount })),
+  });
 }

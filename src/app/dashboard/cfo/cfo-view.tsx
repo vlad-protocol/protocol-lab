@@ -116,6 +116,7 @@ export function CFOView({
             categories={categories}
             transactions={transactions}
             onDeleted={(id) => setTransactions((prev) => prev.filter((t) => t.id !== id))}
+            onManyDeleted={(ids) => setTransactions((prev) => prev.filter((t) => !ids.includes(t.id)))}
           />
         )}
         {tab === "calendar" && (
