@@ -34,7 +34,11 @@ export function getGmailAuthUrl(state: string) {
     prompt: "select_account consent",
     scope: [
       "https://www.googleapis.com/auth/gmail.send",
-      "https://www.googleapis.com/auth/gmail.readonly",
+      // gmail.modify (not just gmail.readonly) is required for anything
+      // that changes a message's state — mark read/unread, star, archive,
+      // trash. It's a superset of gmail.readonly (still covers listing and
+      // reading messages) but stops short of permanently deleting mail.
+      "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     state,
@@ -112,6 +116,7 @@ export type GmailInboxMessage = {
   date: string;
   snippet: string;
   unread: boolean;
+  starred: boolean;
 };
 
 // Pulls the address out of a "Display Name <addr@x.com>" style header value.
@@ -279,9 +284,32 @@ export async function listGmailInbox(userId: string, maxResults = 25): Promise<G
         date: header("Date"),
         snippet: msg.data.snippet || "",
         unread: (msg.data.labelIds || []).includes("UNREAD"),
+        starred: (msg.data.labelIds || []).includes("STARRED"),
       };
     })
   );
 
   return messages;
+}
+
+// Applies one label change to many messages in a single Gmail API call —
+// what powers "select several, mark read/unread/star/archive/delete" the
+// way Gmail's own multi-select toolbar does, instead of one request per
+// message.
+export async function batchModifyGmailMessages(
+  userId: string,
+  ids: string[],
+  opts: { addLabelIds?: string[]; removeLabelIds?: string[] }
+) {
+  if (ids.length === 0) return;
+  const client = await getClientForUser(userId);
+  const gmail = google.gmail({ version: "v1", auth: client });
+  await gmail.users.messages.batchModify({
+    userId: "me",
+    requestBody: {
+      ids,
+      addLabelIds: opts.addLabelIds,
+      removeLabelIds: opts.removeLabelIds,
+    },
+  });
 }

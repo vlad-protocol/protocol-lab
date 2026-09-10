@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { RefreshCw, Archive, Trash2, Star, MailOpen, Mail as MailIcon } from "lucide-react";
 import { MessageDetail } from "./message-detail";
 
 type InboxMessage = {
@@ -13,8 +13,11 @@ type InboxMessage = {
   date: string;
   snippet: string;
   unread: boolean;
+  starred: boolean;
   contact: { id: string; contactName: string; companyName: string | null } | null;
 };
+
+type BulkAction = "markRead" | "markUnread" | "archive" | "trash" | "star" | "unstar";
 
 export function InboxList({
   connected,
@@ -27,6 +30,9 @@ export function InboxList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     setLoading(true);
@@ -39,6 +45,7 @@ export function InboxList({
       return;
     }
     setMessages(d.messages || []);
+    setSelected(new Set());
   }
 
   useEffect(() => {
@@ -50,8 +57,78 @@ export function InboxList({
     onUnreadCountChange?.(messages ? messages.filter((m) => m.unread).length : 0);
   }, [messages, onUnreadCountChange]);
 
+  useEffect(() => {
+    if (!selectAllRef.current || !messages) return;
+    selectAllRef.current.indeterminate = selected.size > 0 && selected.size < messages.length;
+  }, [selected, messages]);
+
   function markRead(id: string) {
     setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? { ...m, unread: false } : m)) : prev));
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (!messages) return;
+    setSelected((prev) => (prev.size === messages.length ? new Set() : new Set(messages.map((m) => m.id))));
+  }
+
+  async function runBulk(action: BulkAction) {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setBulkBusy(true);
+    setError(null);
+    const res = await fetch("/api/mail/inbox/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, action }),
+    });
+    setBulkBusy(false);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(d.error || "That action failed.");
+      return;
+    }
+
+    // Mirror Gmail: archive/trash remove the rows from view immediately
+    // (they've left the inbox), everything else just updates the row.
+    if (action === "archive" || action === "trash") {
+      setMessages((prev) => (prev ? prev.filter((m) => !selected.has(m.id)) : prev));
+    } else {
+      setMessages((prev) =>
+        prev
+          ? prev.map((m) => {
+              if (!selected.has(m.id)) return m;
+              if (action === "markRead") return { ...m, unread: false };
+              if (action === "markUnread") return { ...m, unread: true };
+              if (action === "star") return { ...m, starred: true };
+              if (action === "unstar") return { ...m, starred: false };
+              return m;
+            })
+          : prev
+      );
+    }
+    setSelected(new Set());
+  }
+
+  async function toggleStar(id: string, starred: boolean) {
+    setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? { ...m, starred } : m)) : prev));
+    const res = await fetch("/api/mail/inbox/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id], action: starred ? "star" : "unstar" }),
+    });
+    if (!res.ok) {
+      // revert on failure
+      setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? { ...m, starred: !starred } : m)) : prev));
+    }
   }
 
   if (!connected) {
@@ -93,24 +170,102 @@ export function InboxList({
         <p className="mt-2 text-sm text-[var(--hq-text-muted)]">Your inbox is empty.</p>
       )}
 
+      {messages && messages.length > 0 && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--hq-card-border)] bg-white px-3 py-2">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={selected.size > 0 && selected.size === messages.length}
+            onChange={toggleAll}
+            className="h-4 w-4"
+            aria-label="Select all"
+          />
+          {selected.size === 0 ? (
+            <span className="text-xs text-[var(--hq-text-muted)]">Select messages to act on several at once</span>
+          ) : (
+            <>
+              <span className="text-xs font-medium text-[var(--hq-text)]">{selected.size} selected</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => runBulk("markRead")}
+                  disabled={bulkBusy}
+                  title="Mark as read"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--hq-text-muted)] hover:bg-[var(--hq-canvas)] hover:text-[var(--hq-text)] disabled:opacity-50"
+                >
+                  <MailOpen className="h-3.5 w-3.5" /> Read
+                </button>
+                <button
+                  onClick={() => runBulk("markUnread")}
+                  disabled={bulkBusy}
+                  title="Mark as unread"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--hq-text-muted)] hover:bg-[var(--hq-canvas)] hover:text-[var(--hq-text)] disabled:opacity-50"
+                >
+                  <MailIcon className="h-3.5 w-3.5" /> Unread
+                </button>
+                <button
+                  onClick={() => runBulk("star")}
+                  disabled={bulkBusy}
+                  title="Star"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--hq-text-muted)] hover:bg-[var(--hq-canvas)] hover:text-[var(--hq-text)] disabled:opacity-50"
+                >
+                  <Star className="h-3.5 w-3.5" /> Star
+                </button>
+                <button
+                  onClick={() => runBulk("unstar")}
+                  disabled={bulkBusy}
+                  title="Remove star"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--hq-text-muted)] hover:bg-[var(--hq-canvas)] hover:text-[var(--hq-text)] disabled:opacity-50"
+                >
+                  <Star className="h-3.5 w-3.5" /> Unstar
+                </button>
+                <button
+                  onClick={() => runBulk("archive")}
+                  disabled={bulkBusy}
+                  title="Archive"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--hq-text-muted)] hover:bg-[var(--hq-canvas)] hover:text-[var(--hq-text)] disabled:opacity-50"
+                >
+                  <Archive className="h-3.5 w-3.5" /> Archive
+                </button>
+                <button
+                  onClick={() => runBulk("trash")}
+                  disabled={bulkBusy}
+                  title="Delete"
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="mt-2 space-y-2">
         {messages?.map((m) => (
-          <button
+          <div
             key={m.id}
-            onClick={() => setOpenId(m.id)}
-            className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left ${
+            className={`flex items-start gap-2 rounded-xl border p-4 ${
               m.unread
-                ? "border-[var(--hq-accent)] bg-[var(--hq-accent-soft)] hover:border-[var(--hq-accent)]"
-                : "border-[var(--hq-card-border)] bg-white hover:border-[var(--hq-accent)]"
-            }`}
+                ? "border-[var(--hq-accent)] bg-[var(--hq-accent-soft)]"
+                : "border-[var(--hq-card-border)] bg-white"
+            } ${selected.has(m.id) ? "ring-2 ring-[var(--hq-accent)]" : ""}`}
           >
-            <span
-              className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                m.unread ? "bg-[var(--hq-accent)]" : "bg-transparent"
-              }`}
-              aria-hidden
+            <input
+              type="checkbox"
+              checked={selected.has(m.id)}
+              onChange={() => toggleOne(m.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-1.5 h-4 w-4 shrink-0"
+              aria-label="Select message"
             />
-            <div className="min-w-0 flex-1">
+            <button
+              onClick={() => toggleStar(m.id, !m.starred)}
+              title={m.starred ? "Remove star" : "Star"}
+              className="mt-1 shrink-0 text-[var(--hq-text-muted)] hover:text-amber-500"
+            >
+              <Star className={`h-4 w-4 ${m.starred ? "fill-amber-400 text-amber-500" : ""}`} />
+            </button>
+            <button onClick={() => setOpenId(m.id)} className="min-w-0 flex-1 text-left">
               <div className="flex items-center justify-between gap-2">
                 <p className={`truncate text-sm ${m.unread ? "font-bold" : "font-medium"} text-[var(--hq-text)]`}>
                   {m.subject || "(no subject)"}
@@ -148,8 +303,8 @@ export function InboxList({
                   {m.snippet}
                 </p>
               )}
-            </div>
-          </button>
+            </button>
+          </div>
         ))}
       </div>
 
