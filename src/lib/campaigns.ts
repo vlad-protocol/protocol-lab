@@ -17,6 +17,7 @@ export type AudienceFilter = {
   source?: "crm" | "list"; // omitted = "crm", for backward compatibility with campaigns created before Protocol List existed
   types?: string[]; // ContactType values; CRM only; empty/omitted = all
   statuses?: string[]; // LeadStatus values; CRM only; empty/omitted = all
+  listMemberIds?: string[]; // Protocol List only; empty/omitted = everyone on the list
 };
 
 function audienceWhere(filter: AudienceFilter | null | undefined) {
@@ -30,6 +31,14 @@ function audienceWhere(filter: AudienceFilter | null | undefined) {
   return where;
 }
 
+function listWhere(filter: AudienceFilter | null | undefined) {
+  const where: Prisma.ProtocolListMemberWhereInput = {};
+  if (filter?.listMemberIds && filter.listMemberIds.length > 0) {
+    where.id = { in: filter.listMemberIds };
+  }
+  return where;
+}
+
 function isListSource(filter: AudienceFilter | null | undefined) {
   return filter?.source === "list";
 }
@@ -37,7 +46,10 @@ function isListSource(filter: AudienceFilter | null | undefined) {
 export async function previewEmailAudience(filter: AudienceFilter | null | undefined) {
   const [matching, suppressions] = await Promise.all([
     isListSource(filter)
-      ? prisma.protocolListMember.findMany({ where: { email: { not: null } }, select: { email: true } })
+      ? prisma.protocolListMember.findMany({
+          where: { ...listWhere(filter), email: { not: null } },
+          select: { email: true },
+        })
       : prisma.contact.findMany({
           where: { ...audienceWhere(filter), email: { not: null } },
           select: { email: true },
@@ -59,7 +71,10 @@ export async function previewEmailAudience(filter: AudienceFilter | null | undef
 export async function previewSmsAudience(filter: AudienceFilter | null | undefined) {
   const [matching, suppressions] = await Promise.all([
     isListSource(filter)
-      ? prisma.protocolListMember.findMany({ where: { phone: { not: null } }, select: { phone: true } })
+      ? prisma.protocolListMember.findMany({
+          where: { ...listWhere(filter), phone: { not: null } },
+          select: { phone: true },
+        })
       : prisma.contact.findMany({
           where: { ...audienceWhere(filter), phone: { not: null } },
           select: { phone: true },
@@ -137,7 +152,7 @@ export async function queueEmailCampaign(campaignId: string) {
 
   const [recipients, suppressions] = await Promise.all([
     fromList
-      ? prisma.protocolListMember.findMany({ where: { email: { not: null } } })
+      ? prisma.protocolListMember.findMany({ where: { ...listWhere(filter), email: { not: null } } })
       : prisma.contact.findMany({ where: { ...audienceWhere(filter), email: { not: null } } }),
     prisma.emailSuppression.findMany({ select: { email: true } }),
   ]);
@@ -176,7 +191,7 @@ export async function queueSmsCampaign(campaignId: string) {
 
   const [recipients, suppressions] = await Promise.all([
     fromList
-      ? prisma.protocolListMember.findMany({ where: { phone: { not: null } } })
+      ? prisma.protocolListMember.findMany({ where: { ...listWhere(filter), phone: { not: null } } })
       : prisma.contact.findMany({ where: { ...audienceWhere(filter), phone: { not: null } } }),
     prisma.smsSuppression.findMany({ select: { phone: true } }),
   ]);

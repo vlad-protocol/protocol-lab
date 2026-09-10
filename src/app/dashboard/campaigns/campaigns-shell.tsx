@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Send, Users, AlertTriangle, Mail, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Send, Users, AlertTriangle, Mail, MessageSquare, Search } from "lucide-react";
 import { TYPE_OPTIONS, STATUS_OPTIONS } from "../protocol-crm/types";
+
+type ListMember = { id: string; name: string | null; email: string | null; phone: string | null };
 
 type SendCounts = Record<string, number>;
 
@@ -11,7 +13,7 @@ type Campaign = {
   id: string;
   name: string;
   status: "DRAFT" | "SCHEDULED" | "SENDING" | "SENT" | "CANCELED";
-  audienceFilter: { source?: "crm" | "list"; types?: string[]; statuses?: string[] } | null;
+  audienceFilter: { source?: "crm" | "list"; types?: string[]; statuses?: string[]; listMemberIds?: string[] } | null;
   scheduledAt: string | null;
   sentAt: string | null;
   createdAt: string;
@@ -195,6 +197,9 @@ function CampaignCard({
 
 function describeFilter(filter: Campaign["audienceFilter"]) {
   if (filter?.source === "list") {
+    if (filter.listMemberIds && filter.listMemberIds.length > 0) {
+      return `Protocol List — ${filter.listMemberIds.length} selected`;
+    }
     return "Protocol List — everyone on it";
   }
   if (!filter || ((!filter.types || filter.types.length === 0) && (!filter.statuses || filter.statuses.length === 0))) {
@@ -213,6 +218,10 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
   const [source, setSource] = useState<"crm" | "list">("crm");
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [listMembers, setListMembers] = useState<ListMember[] | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+  const [listSearch, setListSearch] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
   const [preview, setPreview] = useState<{ count: number; suppressedCount: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -226,10 +235,23 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
   function setSourceAndReset(next: "crm" | "list") {
     setSource(next);
     setPreview(null);
+    if (next === "list" && listMembers === null && !listLoading) {
+      setListLoading(true);
+      fetch("/api/protocol-list")
+        .then((r) => r.json())
+        .then((d) => setListMembers(d.members || []))
+        .finally(() => setListLoading(false));
+    }
+  }
+
+  function buildFilter() {
+    return source === "list"
+      ? { source: "list" as const, ...(selectedMemberIds.length > 0 ? { listMemberIds: selectedMemberIds } : {}) }
+      : { source: "crm" as const, types, statuses };
   }
 
   async function checkAudience() {
-    const filter = source === "list" ? { source: "list" as const } : { source: "crm" as const, types, statuses };
+    const filter = buildFilter();
     const res = await fetch("/api/campaigns/audience-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -243,7 +265,7 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const audienceFilter = source === "list" ? { source: "list" as const } : { source: "crm" as const, types, statuses };
+    const audienceFilter = buildFilter();
     const res = await fetch(`/api/campaigns/${channel}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -352,9 +374,18 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
             </div>
           </>
         ) : (
-          <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
-            Sends to everyone on the Protocol List (the free-workout/event crowd — manage it on its own page).
-          </p>
+          <ListMemberPicker
+            channel={channel}
+            members={listMembers}
+            loading={listLoading}
+            search={listSearch}
+            onSearchChange={setListSearch}
+            selectedIds={selectedMemberIds}
+            onSelectedIdsChange={(ids) => {
+              setSelectedMemberIds(ids);
+              setPreview(null);
+            }}
+          />
         )}
       </div>
 
@@ -388,5 +419,120 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
         Save as draft
       </button>
     </form>
+  );
+}
+
+function ListMemberPicker({
+  channel,
+  members,
+  loading,
+  search,
+  onSearchChange,
+  selectedIds,
+  onSelectedIdsChange,
+}: {
+  channel: Channel;
+  members: ListMember[] | null;
+  loading: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  selectedIds: string[];
+  onSelectedIdsChange: (ids: string[]) => void;
+}) {
+  // Only people reachable on this channel can actually receive the
+  // campaign — filter out members with no email (for an email campaign)
+  // or no phone (for SMS) so the picker doesn't offer someone you can't
+  // actually message this way.
+  const eligible = useMemo(
+    () => (members || []).filter((m) => (channel === "email" ? !!m.email : !!m.phone)),
+    [members, channel]
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return eligible;
+    return eligible.filter((m) => `${m.name || ""} ${m.email || ""} ${m.phone || ""}`.toLowerCase().includes(q));
+  }, [eligible, search]);
+
+  const selectedSet = new Set(selectedIds);
+
+  function toggleOne(id: string) {
+    onSelectedIdsChange(selectedSet.has(id) ? selectedIds.filter((v) => v !== id) : [...selectedIds, id]);
+  }
+
+  function selectAllFiltered() {
+    const ids = new Set(selectedIds);
+    for (const m of filtered) ids.add(m.id);
+    onSelectedIdsChange([...ids]);
+  }
+
+  function clearFiltered() {
+    const filteredIds = new Set(filtered.map((m) => m.id));
+    onSelectedIdsChange(selectedIds.filter((id) => !filteredIds.has(id)));
+  }
+
+  if (loading) {
+    return <p className="mt-2 text-xs text-[var(--hq-text-muted)]">Loading Protocol List…</p>;
+  }
+  if (!members) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-[var(--hq-text-muted)]">
+        Leave everyone unchecked to send to the whole list ({eligible.length} reachable by{" "}
+        {channel === "email" ? "email" : "SMS"}), or check specific people to send to only them.
+      </p>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-[var(--hq-text-muted)]" />
+          <input
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search name, email, phone…"
+            className="w-full rounded-md border border-[var(--hq-card-border)] py-1.5 pl-8 pr-3 text-xs"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={selectAllFiltered}
+          className="rounded-md border border-[var(--hq-card-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--hq-text)]"
+        >
+          Select all{search.trim() ? " matching" : ""}
+        </button>
+        <button
+          type="button"
+          onClick={clearFiltered}
+          className="rounded-md border border-[var(--hq-card-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--hq-text)]"
+        >
+          Clear{search.trim() ? " matching" : ""}
+        </button>
+        {selectedIds.length > 0 && (
+          <span className="rounded-full bg-[var(--hq-accent)]/10 px-2 py-1 text-xs font-medium text-[var(--hq-accent)]">
+            {selectedIds.length} selected
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-[var(--hq-card-border)]">
+        {filtered.length === 0 && (
+          <p className="p-3 text-xs text-[var(--hq-text-muted)]">
+            {eligible.length === 0 ? `No one on the list has an ${channel === "email" ? "email" : "phone number"} yet.` : "No matches."}
+          </p>
+        )}
+        {filtered.map((m) => (
+          <label
+            key={m.id}
+            className="flex items-center gap-2 border-b border-[var(--hq-card-border)] px-3 py-1.5 text-xs last:border-0 hover:bg-neutral-50"
+          >
+            <input type="checkbox" checked={selectedSet.has(m.id)} onChange={() => toggleOne(m.id)} />
+            <span className="font-medium text-[var(--hq-text)]">{m.name || "—"}</span>
+            <span className="text-[var(--hq-text-muted)]">{channel === "email" ? m.email : m.phone}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
