@@ -20,6 +20,7 @@ export function Sidebar({
   followerLabel,
   role,
   permissions,
+  badges,
   signOutAction,
 }: {
   userLabel: string;
@@ -27,6 +28,7 @@ export function Sidebar({
   followerLabel: string | null;
   role: "OWNER" | "EMPLOYEE";
   permissions: string[];
+  badges?: Record<string, number>;
   signOutAction: () => Promise<void>;
 }) {
   const pathname = usePathname();
@@ -89,6 +91,7 @@ export function Sidebar({
                 {visibleItems.map((item) => {
                   const active = pathname === item.href;
                   const disabled = !!item.phase;
+                  const badgeCount = badges?.[item.href] ?? 0;
                   return (
                     <Link
                       key={item.href}
@@ -106,11 +109,21 @@ export function Sidebar({
                         <Icon name={item.icon} className="h-3.5 w-3.5" />
                         {item.label}
                       </span>
-                      {item.phase && (
-                        <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-medium text-[var(--hq-sidebar-text-dim)]">
-                          Phase {item.phase}
-                        </span>
-                      )}
+                      <span className="flex items-center gap-1.5">
+                        {badgeCount > 0 && (
+                          <span
+                            title={`${badgeCount} need${badgeCount === 1 ? "s" : ""} your attention`}
+                            className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                          >
+                            {badgeCount > 9 ? "9+" : badgeCount}
+                          </span>
+                        )}
+                        {item.phase && (
+                          <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-medium text-[var(--hq-sidebar-text-dim)]">
+                            Phase {item.phase}
+                          </span>
+                        )}
+                      </span>
                     </Link>
                   );
                 })}
