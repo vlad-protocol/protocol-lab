@@ -3,6 +3,7 @@ import { Mail } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
 import { GmailConnectCard } from "./gmail-connect-card";
+import { HistorySyncCard } from "./history-sync-card";
 import { ComposeCard } from "./compose-card";
 import { MailTabs } from "./mail-tabs";
 
@@ -32,6 +33,7 @@ export default async function MailPage() {
       </p>
 
       <GmailConnectCard connected={!!connection} email={connection?.email || null} />
+      <HistorySyncCard connected={!!connection} email={connection?.email || null} />
       <ComposeCard connected={!!connection} />
 
       <MailTabs

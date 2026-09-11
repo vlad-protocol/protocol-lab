@@ -338,6 +338,17 @@ model GmailConnection {
   refreshToken String // encrypted at rest
   expiresAt    DateTime
   connectedAt  DateTime @default(now())
+
+  // Progress for the one-time full-mailbox "Sent" history backfill (see
+  // src/lib/gmail-history-sync.ts) — a Gmail list pageToken to resume
+  // from, so a mailbox with thousands of messages can be processed in
+  // repeated bounded chunks (one HTTP request each) instead of one huge
+  // request that would time out.
+  historySyncCursor    String?
+  historySyncDone      Boolean   @default(false)
+  historySyncProcessed Int       @default(0)
+  historySyncMatched   Int       @default(0)
+  historySyncStartedAt DateTime?
 }
 
 // Single shared business line — everyone texts/calls from the same number.

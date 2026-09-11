@@ -1,0 +1,150 @@
+import { prisma } from "@/lib/prisma";
+import { listGmailSentPage, extractEmailAddresses, extractEmailAddress } from "@/lib/integrations/gmail";
+
+// One-time backfill: walks every message in the connected Gmail
+// account's "Sent" label (not just the last N), and for each one, links
+// it to every CRM contact whose email shows up in either the To or the
+// Cc header — so a lead who was only cc'd (not the primary recipient)
+// still gets the email attached to their record, same as a lead who was
+// sent to directly.
+//
+// A mailbox can hold thousands of sent messages, and Gmail's API is one
+// message per network round-trip for headers, so this can't run in a
+// single request without risking a timeout. Instead each call processes
+// a bounded number of messages (respecting a wall-clock time budget) and
+// persists a Gmail pageToken cursor on GmailConnection so the next call
+// picks up exactly where the last one left off. The client just calls
+// this repeatedly until it reports done.
+//
+// Dedup is per (message, contact) pair rather than per message alone —
+// deliberately, since one email can legitimately need to attach to
+// several different leads (one in To, another in Cc).
+
+const PAGE_SIZE = 25;
+
+export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000) {
+  const started = Date.now();
+  const conn = await prisma.gmailConnection.findUnique({ where: { userId } });
+  if (!conn) throw new Error("This user hasn't connected Gmail yet.");
+
+  if (conn.historySyncDone) {
+    return { done: true, processed: conn.historySyncProcessed, matched: conn.historySyncMatched };
+  }
+
+  if (!conn.historySyncStartedAt) {
+    await prisma.gmailConnection.update({ where: { userId }, data: { historySyncStartedAt: new Date() } });
+  }
+
+  let cursor = conn.historySyncCursor || undefined;
+  let processed = conn.historySyncProcessed;
+  let matchedTotal = conn.historySyncMatched;
+  let done = false;
+
+  while (Date.now() - started < budgetMs) {
+    const { messages, nextPageToken } = await listGmailSentPage(userId, cursor, PAGE_SIZE);
+
+    if (messages.length > 0) {
+      const allAddresses = new Set<string>();
+      for (const m of messages) {
+        for (const addr of extractEmailAddresses(m.to)) allAddresses.add(addr);
+        for (const addr of extractEmailAddresses(m.cc)) allAddresses.add(addr);
+      }
+
+      const contacts = allAddresses.size
+        ? await prisma.contact.findMany({
+            where: { email: { in: Array.from(allAddresses), mode: "insensitive" } },
+            select: { id: true, email: true },
+          })
+        : [];
+      const contactByEmail = new Map(contacts.map((c) => [c.email!.toLowerCase(), c.id]));
+
+      // Build every (messageId, contactId) pair this page touches, then
+      // find which pairs already exist so reruns (or a resumed sync
+      // after a crash) never double-log the same link.
+      type Pair = { externalId: string; contactId: string; m: typeof messages[number] };
+      const pairs: Pair[] = [];
+      for (const m of messages) {
+        const recipientAddrs = new Set([...extractEmailAddresses(m.to), ...extractEmailAddresses(m.cc)]);
+        const contactIdsForMessage = new Set<string>();
+        for (const addr of recipientAddrs) {
+          const contactId = contactByEmail.get(addr);
+          if (contactId) contactIdsForMessage.add(contactId);
+        }
+        for (const contactId of contactIdsForMessage) {
+          pairs.push({ externalId: m.id, contactId, m });
+        }
+      }
+
+      if (pairs.length > 0) {
+        const existing = await prisma.interaction.findMany({
+          where: { externalId: { in: pairs.map((p) => p.externalId) } },
+          select: { externalId: true, contactId: true },
+        });
+        const existingSet = new Set(existing.map((e) => `${e.externalId}:${e.contactId}`));
+        const toCreate = pairs.filter((p) => !existingSet.has(`${p.externalId}:${p.contactId}`));
+
+        if (toCreate.length > 0) {
+          await prisma.interaction.createMany({
+            data: toCreate.map((p) => {
+              const parsedDate = new Date(p.m.date);
+              return {
+                contactId: p.contactId,
+                userId,
+                type: "EMAIL" as const,
+                direction: "OUTBOUND" as const,
+                subject: p.m.subject || null,
+                body: p.m.snippet || null,
+                fromAddress: extractEmailAddress(p.m.from) || p.m.from || null,
+                toAddress: extractEmailAddress(p.m.to) || p.m.to || null,
+                externalId: p.m.id,
+                occurredAt: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+              };
+            }),
+          });
+          matchedTotal += toCreate.length;
+        }
+      }
+
+      processed += messages.length;
+    }
+
+    cursor = nextPageToken || undefined;
+    if (!nextPageToken) {
+      done = true;
+      break;
+    }
+
+    // Persist progress after every page, not just at the end — if the
+    // process restarts mid-sync (deploy, crash), it resumes from the
+    // last completed page instead of from scratch.
+    await prisma.gmailConnection.update({
+      where: { userId },
+      data: { historySyncCursor: cursor, historySyncProcessed: processed, historySyncMatched: matchedTotal },
+    });
+  }
+
+  await prisma.gmailConnection.update({
+    where: { userId },
+    data: {
+      historySyncCursor: done ? null : cursor,
+      historySyncDone: done,
+      historySyncProcessed: processed,
+      historySyncMatched: matchedTotal,
+    },
+  });
+
+  return { done, processed, matched: matchedTotal };
+}
+
+export async function restartGmailHistorySync(userId: string) {
+  await prisma.gmailConnection.update({
+    where: { userId },
+    data: {
+      historySyncCursor: null,
+      historySyncDone: false,
+      historySyncProcessed: 0,
+      historySyncMatched: 0,
+      historySyncStartedAt: new Date(),
+    },
+  });
+}

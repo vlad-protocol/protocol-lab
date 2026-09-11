@@ -127,6 +127,17 @@ export function extractEmailAddress(headerValue: string): string | null {
   return trimmed.includes("@") ? trimmed : null;
 }
 
+const EMAIL_ADDRESS_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+// A To/Cc header can list several recipients ("Jane <jane@x.com>, Bob
+// <bob@y.com>"), and display names can themselves contain commas, which
+// makes naive comma-splitting unreliable. Scanning for anything
+// email-shaped sidesteps that entirely — good enough for matching
+// against known CRM contact addresses.
+export function extractEmailAddresses(headerValue: string): string[] {
+  return Array.from(new Set((headerValue.match(EMAIL_ADDRESS_RE) || []).map((a) => a.toLowerCase())));
+}
+
 export type GmailFullMessage = {
   id: string;
   threadId: string;
@@ -312,4 +323,62 @@ export async function batchModifyGmailMessages(
       removeLabelIds: opts.removeLabelIds,
     },
   });
+}
+
+export type GmailSentMessage = {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  date: string;
+  snippet: string;
+};
+
+// One page of the SENT label, with To/Cc headers (unlike listGmailInbox,
+// which only needs From for its purpose) — this is what the full-history
+// backfill walks page by page via pageToken to cover a mailbox of any
+// size without one giant request.
+export async function listGmailSentPage(
+  userId: string,
+  pageToken: string | undefined,
+  maxResults = 50
+): Promise<{ messages: GmailSentMessage[]; nextPageToken: string | null }> {
+  const client = await getClientForUser(userId);
+  const gmail = google.gmail({ version: "v1", auth: client });
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    maxResults,
+    labelIds: ["SENT"],
+    pageToken,
+  });
+  const refs = list.data.messages || [];
+
+  const messages = await Promise.all(
+    refs.map(async (ref) => {
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id: ref.id as string,
+        format: "metadata",
+        metadataHeaders: ["From", "To", "Cc", "Subject", "Date"],
+      });
+      const headers = msg.data.payload?.headers || [];
+      const header = (name: string) =>
+        headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+      return {
+        id: msg.data.id as string,
+        threadId: (msg.data.threadId || "") as string,
+        from: header("From"),
+        to: header("To"),
+        cc: header("Cc"),
+        subject: header("Subject"),
+        date: header("Date"),
+        snippet: msg.data.snippet || "",
+      };
+    })
+  );
+
+  return { messages, nextPageToken: list.data.nextPageToken || null };
 }
