@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
 import { LeadHeader } from "./lead-header";
 import { LeadDetails } from "./lead-details";
+import { PeoplePanel } from "./people-panel";
 import { LeadSummaryPanel } from "./lead-summary-panel";
 import { SequencePanel } from "./sequence-panel";
 import { Timeline } from "./timeline";
@@ -27,6 +28,7 @@ export default async function LeadDetailPage({
           orderBy: { occurredAt: "desc" },
           include: { user: { select: { id: true, name: true, email: true } } },
         },
+        people: { orderBy: { createdAt: "asc" } },
       },
     }),
     prisma.emailSequence.findMany({
@@ -59,6 +61,8 @@ export default async function LeadDetailPage({
       </Link>
 
       <LeadHeader lead={lead} canDelete={session.user.role === "OWNER"} />
+
+      <PeoplePanel contactId={lead.id} people={lead.people} />
 
       <LeadDetails
         details={{

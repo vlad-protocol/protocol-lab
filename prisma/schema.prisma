@@ -172,6 +172,7 @@ model Contact {
   summaryGeneratedAt      DateTime?
 
   interactions        Interaction[]
+  people              ContactPerson[]
   sequenceEnrollments SequenceEnrollment[]
   shootCards          ShootCard[]
   labEntries          StudioEntry[]
@@ -188,6 +189,28 @@ model Contact {
   @@index([status])
   @@index([type])
   @@index([nextFollowUpDate])
+}
+
+// Additional stakeholders on a lead beyond its one primary contact —
+// e.g. a venue's events manager AND their finance contact, or a
+// sponsor's main rep plus an assistant CC'd on everything. Each
+// person's email/phone is matched against incoming and outgoing mail
+// too (see findContactSummariesByEmails / mapEmailsToContactIds in
+// crm-contact.ts), so a message to or from any of them still lands on
+// this lead's timeline, not just the primary Contact.email.
+model ContactPerson {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  name      String
+  title     String?
+  email     String?
+  phone     String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+  @@index([email])
 }
 
 enum InteractionType {

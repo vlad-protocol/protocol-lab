@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { listGmailMessagesPage, extractEmailAddresses, extractEmailAddress } from "@/lib/integrations/gmail";
+import { mapEmailsToContactIds } from "@/lib/crm-contact";
 
 // One-time backfill: walks every message in the connected Gmail
 // account's Sent mail, then every message in Inbox — not just the last
@@ -56,13 +57,10 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
         for (const addr of extractEmailAddresses(m.from)) allAddresses.add(addr);
       }
 
-      const contacts = allAddresses.size
-        ? await prisma.contact.findMany({
-            where: { email: { in: Array.from(allAddresses), mode: "insensitive" } },
-            select: { id: true, email: true },
-          })
-        : [];
-      const contactByEmail = new Map(contacts.map((c) => [c.email!.toLowerCase(), c.id]));
+      // Matches against a lead's primary email AND any additional
+      // stakeholder emails recorded on it (see ContactPerson), so a
+      // message to/from a secondary contact still links to the lead.
+      const contactByEmail = await mapEmailsToContactIds(Array.from(allAddresses));
 
       // Build every (messageId, contactId) pair this page touches, then
       // find which pairs already exist so reruns (or a resumed sync

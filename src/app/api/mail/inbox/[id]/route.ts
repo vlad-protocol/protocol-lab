@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getGmailMessage, markGmailRead, extractEmailAddress } from "@/lib/integrations/gmail";
+import { findContactSummaryByEmail } from "@/lib/crm-contact";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -27,12 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
 
     const senderAddress = extractEmailAddress(message.from);
-    const contact = senderAddress
-      ? await prisma.contact.findFirst({
-          where: { email: { equals: senderAddress, mode: "insensitive" } },
-          select: { id: true, contactName: true, companyName: true },
-        })
-      : null;
+    const contact = senderAddress ? await findContactSummaryByEmail(senderAddress) : null;
 
     return NextResponse.json({ message, contact });
   } catch (err) {

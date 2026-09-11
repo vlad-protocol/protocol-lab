@@ -4,6 +4,7 @@ import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { listGmailInbox, extractEmailAddress } from "@/lib/integrations/gmail";
 import { pauseEnrollmentsOnReply } from "@/lib/sequences";
+import { findContactSummariesByEmails } from "@/lib/crm-contact";
 
 export async function GET() {
   const session = await auth();
@@ -28,13 +29,9 @@ export async function GET() {
           .filter((addr): addr is string => !!addr)
       )
     );
-    const contacts = senderAddresses.length
-      ? await prisma.contact.findMany({
-          where: { email: { in: senderAddresses, mode: "insensitive" } },
-          select: { id: true, contactName: true, companyName: true, email: true },
-        })
-      : [];
-    const byEmail = new Map(contacts.map((c) => [c.email!.toLowerCase(), c]));
+    // Matches against a lead's primary email AND any additional
+    // stakeholder emails recorded on it (see ContactPerson).
+    const byEmail = await findContactSummariesByEmails(senderAddresses);
 
     const withContacts = messages.map((m) => {
       const addr = extractEmailAddress(m.from);
