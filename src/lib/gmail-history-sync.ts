@@ -3,10 +3,11 @@ import { listGmailSentPage, extractEmailAddresses, extractEmailAddress } from "@
 
 // One-time backfill: walks every message in the connected Gmail
 // account's "Sent" label (not just the last N), and for each one, links
-// it to every CRM contact whose email shows up in either the To or the
-// Cc header — so a lead who was only cc'd (not the primary recipient)
-// still gets the email attached to their record, same as a lead who was
-// sent to directly.
+// it to every CRM contact whose email shows up in the To, Cc, or From
+// header — so a lead who was only cc'd (not the primary recipient), or
+// who shows up as the From on a delegated/aliased send, still gets the
+// email attached to their record, same as a lead who was sent to
+// directly.
 //
 // A mailbox can hold thousands of sent messages, and Gmail's API is one
 // message per network round-trip for headers, so this can't run in a
@@ -48,6 +49,7 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
       for (const m of messages) {
         for (const addr of extractEmailAddresses(m.to)) allAddresses.add(addr);
         for (const addr of extractEmailAddresses(m.cc)) allAddresses.add(addr);
+        for (const addr of extractEmailAddresses(m.from)) allAddresses.add(addr);
       }
 
       const contacts = allAddresses.size
@@ -64,7 +66,11 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
       type Pair = { externalId: string; contactId: string; m: typeof messages[number] };
       const pairs: Pair[] = [];
       for (const m of messages) {
-        const recipientAddrs = new Set([...extractEmailAddresses(m.to), ...extractEmailAddresses(m.cc)]);
+        const recipientAddrs = new Set([
+          ...extractEmailAddresses(m.to),
+          ...extractEmailAddresses(m.cc),
+          ...extractEmailAddresses(m.from),
+        ]);
         const contactIdsForMessage = new Set<string>();
         for (const addr of recipientAddrs) {
           const contactId = contactByEmail.get(addr);

@@ -55,7 +55,7 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
           </p>
           <p className="mt-1 text-xs text-[var(--hq-text-muted)]">
             Scans every sent email in {email}&apos;s mailbox — not just recent ones — and attaches it to
-            any lead who was on the To line <em>or</em> cc&apos;d, so their whole history shows up on the
+            any lead on the To line, cc&apos;d, or in the From header, so their whole history shows up on the
             contact page.
           </p>
           {progress && (
