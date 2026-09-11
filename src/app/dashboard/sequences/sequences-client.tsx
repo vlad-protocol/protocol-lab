@@ -18,7 +18,13 @@ type Sequence = {
 
 const EMPTY_STEP: Step = { delayDays: 0, subject: "", body: "", researchAngle: "" };
 
-export function SequencesClient({ initialSequences }: { initialSequences: Sequence[] }) {
+export function SequencesClient({
+  initialSequences,
+  hasOldDefaultSequence,
+}: {
+  initialSequences: Sequence[];
+  hasOldDefaultSequence: boolean;
+}) {
   const router = useRouter();
   const [sequences, setSequences] = useState(initialSequences);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -29,6 +35,30 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
   const [newRequiresConfirmation, setNewRequiresConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(hasOldDefaultSequence);
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeResult, setUpgradeResult] = useState<string | null>(null);
+
+  // One-time upgrade for accounts whose default sequence was seeded under
+  // the old name before the Sponsor Cold Outreach templates existed — see
+  // /api/admin/migrate-sponsor-sequence and hasOldDefaultSequence above.
+  async function upgradeDefaultSequence() {
+    setUpgrading(true);
+    setUpgradeResult(null);
+    const res = await fetch("/api/admin/migrate-sponsor-sequence", { method: "POST" });
+    const d = await res.json().catch(() => null);
+    setUpgrading(false);
+    if (!res.ok || !d) {
+      setUpgradeResult("Failed to upgrade the sequence.");
+      return;
+    }
+    if (d.migrated) {
+      setShowUpgrade(false);
+      router.refresh();
+    } else {
+      setUpgradeResult(d.reason || "Nothing to upgrade.");
+    }
+  }
 
   async function createSequence(e: React.FormEvent) {
     e.preventDefault();
@@ -106,6 +136,29 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
   return (
     <div className="mt-6">
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
+      {showUpgrade && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--hq-accent)]/30 bg-[var(--hq-accent)]/5 p-4">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--hq-text)]">
+              <Sparkles className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> New sponsorship outreach templates available
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--hq-text-muted)]">
+              Your existing "New Lead Follow-Up" sequence can be upgraded in place to the new
+              "Sponsor Cold Outreach" templates — AI-researched personalization, confirmed by you
+              before anything sends.
+            </p>
+            {upgradeResult && <p className="mt-1 text-xs text-[var(--hq-text-muted)]">{upgradeResult}</p>}
+          </div>
+          <button
+            onClick={upgradeDefaultSequence}
+            disabled={upgrading}
+            className="shrink-0 rounded-md bg-[var(--hq-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          >
+            {upgrading ? "Upgrading…" : "Upgrade now"}
+          </button>
+        </div>
+      )}
 
       <button
         onClick={() => setShowNew((s) => !s)}

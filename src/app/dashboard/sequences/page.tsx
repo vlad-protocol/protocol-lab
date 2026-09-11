@@ -13,6 +13,15 @@ export default async function SequencesPage() {
   // sequence seeded automatically — see getOrSeedDefaultSequence for why.
   await getOrSeedDefaultSequence(session.user.id);
 
+  // Accounts that already had a sequence seeded under the old name, before
+  // the Sponsor Cold Outreach templates existed, don't get upgraded by the
+  // seed above (it only fires on a completely empty table) — surface an
+  // upgrade button instead. See /api/admin/migrate-sponsor-sequence.
+  const hasOldDefaultSequence = !!(await prisma.emailSequence.findFirst({
+    where: { name: "New Lead Follow-Up" },
+    select: { id: true },
+  }));
+
   const sequences = await prisma.emailSequence.findMany({
     orderBy: { createdAt: "asc" },
     include: {
@@ -46,6 +55,7 @@ export default async function SequencesPage() {
       </p>
 
       <SequencesClient
+        hasOldDefaultSequence={hasOldDefaultSequence}
         initialSequences={sequences.map((s) => ({
           id: s.id,
           name: s.name,
