@@ -142,6 +142,8 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
       body: draft.body,
       toAddress: enrollment.contact.email,
       externalId,
+      sequenceEnrollmentId: enrollment.id,
+      sequenceStepOrder: draft.stepOrder,
     },
   });
 

@@ -279,6 +279,8 @@ export async function runDueSequenceSteps() {
           body,
           toAddress: enrollment.contact.email,
           externalId,
+          sequenceEnrollmentId: enrollment.id,
+          sequenceStepOrder: stepOrder,
         },
       });
 

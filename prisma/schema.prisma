@@ -255,8 +255,18 @@ model Interaction {
   occurredAt      DateTime             @default(now())
   createdAt       DateTime             @default(now())
 
+  // Set only when this Interaction IS a sequence step's send (see
+  // runDueSequenceSteps in sequences.ts and sendConfirmedDraft in
+  // sequence-drafts.ts) — lets the lead page show exactly when each step
+  // of a sequence actually went out, rather than guessing from
+  // lastSentAt/currentStep alone.
+  sequenceEnrollmentId String?
+  sequenceEnrollment   SequenceEnrollment? @relation(fields: [sequenceEnrollmentId], references: [id], onDelete: SetNull)
+  sequenceStepOrder    Int?
+
   @@index([contactId, occurredAt])
   @@index([externalId])
+  @@index([sequenceEnrollmentId])
 }
 
 // --- Automations ----------------------------------------------------------
@@ -381,7 +391,8 @@ model SequenceEnrollment {
   lastSentAt  DateTime?
   enrolledAt  DateTime                 @default(now())
 
-  drafts SequenceStepDraft[]
+  drafts       SequenceStepDraft[]
+  interactions Interaction[] // one per step actually sent — see Interaction.sequenceStepOrder
 
   @@index([status, nextSendAt])
   @@index([contactId])

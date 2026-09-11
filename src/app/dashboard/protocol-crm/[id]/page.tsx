@@ -39,7 +39,16 @@ export default async function LeadDetailPage({
     prisma.sequenceEnrollment.findMany({
       where: { contactId: id },
       orderBy: { enrolledAt: "desc" },
-      include: { sequence: { select: { id: true, name: true, steps: { select: { id: true } } } } },
+      include: {
+        sequence: {
+          select: { id: true, name: true, steps: { orderBy: { order: "asc" }, select: { order: true, subject: true, delayDays: true } } },
+        },
+        interactions: {
+          where: { sequenceStepOrder: { not: null } },
+          orderBy: { occurredAt: "asc" },
+          select: { sequenceStepOrder: true, occurredAt: true, subject: true },
+        },
+      },
     }),
   ]);
 
@@ -104,7 +113,15 @@ export default async function LeadDetailPage({
             id: e.sequence.id,
             name: e.sequence.name,
             stepCount: e.sequence.steps.length,
+            steps: e.sequence.steps.map((s) => ({ order: s.order, subject: s.subject, delayDays: s.delayDays })),
           },
+          sentSteps: e.interactions
+            .filter((i) => i.sequenceStepOrder !== null)
+            .map((i) => ({
+              stepOrder: i.sequenceStepOrder as number,
+              occurredAt: i.occurredAt.toISOString(),
+              subject: i.subject,
+            })),
         }))}
       />
 
