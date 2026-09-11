@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check } from "lucide-react";
+import { useRef, useState } from "react";
+import { Check, Upload, X } from "lucide-react";
 import { buildSignatureHtml, type SignatureFields } from "@/lib/email-signature";
 
 type Signature = SignatureFields | null;
@@ -28,10 +28,31 @@ export function EmailSignatureCard({ initial, email }: { initial: Signature; ema
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function update(patch: Partial<SignatureFields>) {
     setSig((s) => ({ ...s, ...patch }));
     setSaved(false);
+  }
+
+  async function uploadLogo(file: File) {
+    setUploadingLogo(true);
+    setError(null);
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/account/email-signature/logo", { method: "POST", body: form });
+    const d = await res.json().catch(() => ({}));
+    setUploadingLogo(false);
+    if (!res.ok) {
+      setError(d.error || "Failed to upload logo.");
+      return;
+    }
+    // The upload route already saved this straight onto the account, so
+    // it'll stick even without hitting "Save signature" — updating local
+    // state just keeps the preview and the rest of this unsaved form in
+    // sync with it.
+    update({ signatureLogoUrl: d.url });
   }
 
   async function save() {
@@ -93,12 +114,53 @@ export function EmailSignatureCard({ initial, email }: { initial: Signature; ema
           value={sig.signatureCompany || ""}
           onChange={(e) => update({ signatureCompany: e.target.value })}
         />
-        <input
-          className={inputCls}
-          placeholder="Logo image URL (optional — a hosted image; falls back to text)"
-          value={sig.signatureLogoUrl || ""}
-          onChange={(e) => update({ signatureLogoUrl: e.target.value })}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadLogo(file);
+              e.target.value = "";
+            }}
+          />
+          {sig.signatureLogoUrl ? (
+            <>
+              <img
+                src={sig.signatureLogoUrl}
+                alt="Logo"
+                className="h-9 w-9 rounded border border-[var(--hq-card-border)] object-contain bg-[var(--hq-canvas)]"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingLogo}
+                className="rounded-md border border-[var(--hq-card-border)] px-2 py-1.5 text-xs font-medium text-[var(--hq-text)] disabled:opacity-50"
+              >
+                {uploadingLogo ? "Uploading…" : "Replace logo"}
+              </button>
+              <button
+                type="button"
+                onClick={() => update({ signatureLogoUrl: "" })}
+                title="Remove logo (falls back to text)"
+                className="text-[var(--hq-text-muted)] hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingLogo}
+              className="flex items-center gap-1.5 rounded-md border border-dashed border-[var(--hq-card-border)] px-3 py-1.5 text-xs font-medium text-[var(--hq-text)] disabled:opacity-50"
+            >
+              <Upload className="h-3.5 w-3.5" /> {uploadingLogo ? "Uploading…" : "Upload logo (JPEG, PNG, GIF, or WebP)"}
+            </button>
+          )}
+        </div>
         <textarea
           className={`${inputCls} sm:col-span-2`}
           placeholder="Address (optional, one line per row)"
