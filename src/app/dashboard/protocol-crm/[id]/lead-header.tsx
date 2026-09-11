@@ -41,6 +41,7 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
   const [editingName, setEditingName] = useState(false);
   const [contactName, setContactName] = useState(lead.contactName);
   const [companyName, setCompanyName] = useState(lead.companyName || "");
+  const [title, setTitle] = useState(lead.title || "");
   const [savingName, setSavingName] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [email, setEmail] = useState(lead.email || "");
@@ -62,6 +63,7 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
     await updateField({
       contactName: contactName.trim() || companyName.trim(),
       companyName: companyName.trim() || null,
+      title: title.trim() || null,
     });
     setSavingName(false);
     setEditingName(false);
@@ -70,6 +72,7 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
   function cancelEditName() {
     setContactName(lead.contactName);
     setCompanyName(lead.companyName || "");
+    setTitle(lead.title || "");
     setEditingName(false);
   }
 
@@ -117,6 +120,13 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
                 onChange={(e) => setCompanyName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveName()}
               />
+              <input
+                placeholder="Title (optional, e.g. Manager)"
+                className="rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text-muted)]"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+              />
               <button
                 onClick={saveName}
                 disabled={savingName}
@@ -142,11 +152,20 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
             </div>
           )}
           {!editingName && lead.companyName && lead.contactName !== lead.companyName && (
-            <p className="flex items-center gap-1 text-sm text-[var(--hq-text-muted)]">
-              <Building2 className="h-3.5 w-3.5" />
-              {lead.title ? `${lead.title}, ` : ""}
-              {lead.contactName}
-            </p>
+            <div className="group flex items-center gap-1.5">
+              <p className="flex items-center gap-1 text-sm text-[var(--hq-text-muted)]">
+                <Building2 className="h-3.5 w-3.5" />
+                {lead.title ? `${lead.title}, ` : ""}
+                {lead.contactName}
+              </p>
+              <button
+                onClick={() => setEditingName(true)}
+                title="Edit contact name / title"
+                className="text-[var(--hq-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hq-accent)]"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </div>
           )}
         </div>
         {canDelete && (
