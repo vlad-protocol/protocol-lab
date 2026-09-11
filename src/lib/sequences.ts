@@ -32,6 +32,67 @@ export function daysToMs(days: number) {
   return days * 24 * 60 * 60 * 1000;
 }
 
+// Shared template for the 3-touch cold-outreach sequence — hook, value-add,
+// breakup — for Protocol sponsorship leads. Used both to seed a brand-new
+// account (getOrSeedDefaultSequence, below) and by the one-time admin
+// migration (/api/admin/migrate-sponsor-sequence) that upgrades an account
+// whose default sequence was already seeded under the old name/content
+// before these templates existed. Keep both call sites reading from here so
+// they can never drift apart.
+export const DEFAULT_SEQUENCE_TEMPLATE = {
+  name: "Sponsor Cold Outreach",
+  description:
+    "3-touch cold email sequence for Protocol sponsorship leads: hook, value-add, breakup. Every step's personalized observation is researched and drafted automatically, then waits for your confirmation in Automation Confirmations before it sends.",
+  steps: [
+    {
+      order: 0,
+      delayDays: 0,
+      researchAngle:
+        "A specific, personalized hook — one real, current, checkable reason Protocol (a Montreal sober rave built around a group workout: real sweat first, then a DJ set) and this brand's audience overlap right now. E.g. a recent launch, event, sponsorship, or audience move.",
+      subject: "{{hook}} + Protocol x {{brand}}",
+      body: `Hi {{firstName}},
+
+{{observation}}
+
+Quick intro: we run Protocol — AFTR:HOURS, a sober rave built around a workout. Real sweat first, then a DJ takes over. It's become Montreal's spot for the healthiest people in the nightlife scene, and the most fun people in the fitness scene.
+
+{{brand}} would be in front of exactly that room. We've got sponsorship tiers from $500 to $2,500+, plus in-kind trade options.
+
+Got 15 minutes this week to see if there's a fit?
+
+{{repName}}
+Protocol | protocolevnts@gmail.com | @byprotocol | protocolevent.com`,
+    },
+    {
+      order: 1,
+      delayDays: 2,
+      researchAngle:
+        "One genuinely useful, specific observation about this brand or the audience they reach — not a pitch, something with real insight, e.g. about what's working for them right now or a trend touching their audience.",
+      subject: "Re: Protocol x {{brand}}",
+      body: `Hi {{firstName}},
+
+Following up in case this got buried. One thing regardless of whether we ever talk: {{observation}}
+
+If it's useful to compare notes on what's working with this audience right now, happy to hop on a quick call — no pitch, just conversation. {{bookingLink}}
+
+{{repName}}`,
+    },
+    {
+      order: 2,
+      delayDays: 4,
+      researchAngle: null as string | null,
+      subject: "Should I close the loop?",
+      body: `Hi {{firstName}},
+
+Haven't heard back — figuring the timing's not right, and that's all good.
+
+If reaching health-focused young professionals in Montreal becomes a priority down the line, I'm around. Rooting for {{brand}} either way.
+
+{{repName}}`,
+    },
+  ],
+};
+
 // Default 3-touch cold-outreach sequence for Protocol sponsorship leads —
 // hook, value-add, breakup — created once, automatically, the first time
 // anyone opens the Sequences page on an account with none yet. Fully
@@ -49,62 +110,12 @@ export async function getOrSeedDefaultSequence(userId: string) {
 
   await prisma.emailSequence.create({
     data: {
-      name: "Sponsor Cold Outreach",
-      description:
-        "3-touch cold email sequence for Protocol sponsorship leads: hook, value-add, breakup. Every step's personalized observation is researched and drafted automatically, then waits for your confirmation in Automation Confirmations before it sends.",
+      name: DEFAULT_SEQUENCE_TEMPLATE.name,
+      description: DEFAULT_SEQUENCE_TEMPLATE.description,
       enabled: true,
       requiresConfirmation: true,
       createdById: userId,
-      steps: {
-        create: [
-          {
-            order: 0,
-            delayDays: 0,
-            researchAngle:
-              "A specific, personalized hook — one real, current, checkable reason Protocol (a Montreal sober rave built around a group workout: real sweat first, then a DJ set) and this brand's audience overlap right now. E.g. a recent launch, event, sponsorship, or audience move.",
-            subject: "{{hook}} + Protocol x {{brand}}",
-            body: `Hi {{firstName}},
-
-{{observation}}
-
-Quick intro: we run Protocol — AFTR:HOURS, a sober rave built around a workout. Real sweat first, then a DJ takes over. It's become Montreal's spot for the healthiest people in the nightlife scene, and the most fun people in the fitness scene.
-
-{{brand}} would be in front of exactly that room. We've got sponsorship tiers from $500 to $2,500+, plus in-kind trade options.
-
-Got 15 minutes this week to see if there's a fit?
-
-{{repName}}
-Protocol | protocolevnts@gmail.com | @byprotocol | protocolevent.com`,
-          },
-          {
-            order: 1,
-            delayDays: 2,
-            researchAngle:
-              "One genuinely useful, specific observation about this brand or the audience they reach — not a pitch, something with real insight, e.g. about what's working for them right now or a trend touching their audience.",
-            subject: "Re: Protocol x {{brand}}",
-            body: `Hi {{firstName}},
-
-Following up in case this got buried. One thing regardless of whether we ever talk: {{observation}}
-
-If it's useful to compare notes on what's working with this audience right now, happy to hop on a quick call — no pitch, just conversation. {{bookingLink}}
-
-{{repName}}`,
-          },
-          {
-            order: 2,
-            delayDays: 4,
-            researchAngle: null,
-            subject: "Should I close the loop?",
-            body: `Hi {{firstName}},
-
-Haven't heard back — figuring the timing's not right, and that's all good.
-
-If reaching health-focused young professionals in Montreal becomes a priority down the line, I'm around. Rooting for {{brand}} either way.
-
-{{repName}}`,
-          },
-        ],
-      },
+      steps: { create: DEFAULT_SEQUENCE_TEMPLATE.steps },
     },
   });
 }
