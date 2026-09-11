@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { publicBaseUrl } from "@/lib/http";
 
 // Logo upload for a personal email signature — self-service like the
 // rest of the email-signature feature (no extra permission beyond being
@@ -38,9 +39,7 @@ export async function POST(req: Request) {
     },
   });
 
-  const url = new URL(req.url);
-  const baseUrl = process.env.PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
-  const logoUrl = `${baseUrl}/api/uploads/${image.id}`;
+  const logoUrl = `${publicBaseUrl(req)}/api/uploads/${image.id}`;
 
   // Save it straight onto the user's signature too — the caller doesn't
   // have to make a second PATCH request just to point signatureLogoUrl

@@ -58,8 +58,11 @@ function displayHost(url: string): string {
 export function buildSignatureHtml(sig: SignatureFields): string | null {
   if (!sig.signatureEnabled || !sig.signatureName?.trim()) return null;
 
-  const accent = /^#[0-9a-fA-F]{3,8}$/.test(sig.signatureAccent || "")
-    ? (sig.signatureAccent as string)
+  const rawAccent = (sig.signatureAccent || "").trim();
+  const accent = /^#?[0-9a-fA-F]{3,8}$/.test(rawAccent)
+    ? rawAccent.startsWith("#")
+      ? rawAccent
+      : `#${rawAccent}`
     : DEFAULT_SIGNATURE_ACCENT;
 
   const addressLines = (sig.signatureAddress || "")

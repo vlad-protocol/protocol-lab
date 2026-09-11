@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
+import { publicBaseUrl } from "@/lib/http";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB — plenty for an email-embedded image, keeps the DB row small
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -41,8 +42,5 @@ export async function POST(req: Request) {
     },
   });
 
-  const url = new URL(req.url);
-  const baseUrl = process.env.PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
-
-  return NextResponse.json({ id: image.id, url: `${baseUrl}/api/uploads/${image.id}` });
+  return NextResponse.json({ id: image.id, url: `${publicBaseUrl(req)}/api/uploads/${image.id}` });
 }
