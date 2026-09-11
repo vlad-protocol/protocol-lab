@@ -4,6 +4,7 @@ import { getSession as auth } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { TwilioConnectCard } from "./twilio-connect-card";
+import { EmailSignatureCard } from "./email-signature-card";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,23 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   const twilio = await prisma.twilioConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+  const signature = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      signatureEnabled: true,
+      signatureName: true,
+      signatureTitle: true,
+      signatureCompany: true,
+      signatureAddress: true,
+      signaturePhone: true,
+      signatureEmail: true,
+      signatureWebsite: true,
+      signatureInstagram: true,
+      signatureFacebook: true,
+      signatureLogoUrl: true,
+      signatureAccent: true,
+    },
+  });
 
   return (
     <div className="max-w-3xl">
@@ -19,6 +37,11 @@ export default async function SettingsPage() {
         <SettingsIcon className="h-6 w-6 text-[var(--hq-text-muted)]" />
         Settings
       </h1>
+
+      <p className="mt-6 text-[10px] font-semibold uppercase tracking-wider text-[var(--hq-text-muted)]">
+        Email signature (yours only)
+      </p>
+      <EmailSignatureCard initial={signature} email={session.user.email || ""} />
 
       {session.user.role === "OWNER" && (
         <>

@@ -32,6 +32,25 @@ model User {
   invitedUsers User[]   @relation("Invites")
   createdAt    DateTime @default(now())
 
+  // Per-person email signature, appended server-side to every email this
+  // user sends through the app — automated sequences/automations and
+  // manual Mail compose/reply alike, since both funnel through
+  // sendGmail/sendGmailReply in lib/integrations/gmail.ts. Structured
+  // fields (not raw HTML) so the rendered card stays consistent and this
+  // never has to trust user-authored markup. See lib/email-signature.ts.
+  signatureEnabled   Boolean @default(false)
+  signatureName      String?
+  signatureTitle     String?
+  signatureCompany   String?
+  signatureAddress   String?
+  signaturePhone     String?
+  signatureEmail     String?
+  signatureWebsite   String?
+  signatureInstagram String?
+  signatureFacebook  String?
+  signatureLogoUrl   String?
+  signatureAccent    String?
+
   reels                   Reel[]
   stats                   WeeklyStat[]
   contactsCreated         Contact[]            @relation("CreatedBy")

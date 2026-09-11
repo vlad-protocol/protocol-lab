@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { buildSignatureHtml, buildSignatureText, buildHtmlEmail, type SignatureFields } from "@/lib/email-signature";
 
 // Each rep connects their own Gmail account (via OAuth) so mail sent from
 // the HQ actually comes from them, not a shared inbox — matching "I want
@@ -122,14 +123,59 @@ async function getClientForUser(userId: string) {
   return client;
 }
 
-function buildRawMessage(to: string, from: string, subject: string, body: string) {
+const SIGNATURE_SELECT = {
+  signatureEnabled: true,
+  signatureName: true,
+  signatureTitle: true,
+  signatureCompany: true,
+  signatureAddress: true,
+  signaturePhone: true,
+  signatureEmail: true,
+  signatureWebsite: true,
+  signatureInstagram: true,
+  signatureFacebook: true,
+  signatureLogoUrl: true,
+  signatureAccent: true,
+} as const;
+
+async function getUserSignature(userId: string): Promise<SignatureFields | null> {
+  return prisma.user.findUnique({ where: { id: userId }, select: SIGNATURE_SELECT });
+}
+
+// Every send path in the app hands this a plain-text body (sequence
+// templates, drafts, and the Mail compose/reply boxes all work in plain
+// text) — so the actual message goes out as multipart/alternative: a
+// text/plain part (body + a plain-text signature) alongside a text/html
+// part (the same body as paragraphs + the signature's styled card),
+// giving mail clients the pick of either without changing every call
+// site that builds a body. Appending the signature here, keyed off
+// whichever userId is sending, is what makes it apply everywhere —
+// automations, sequences, and manual Mail send/reply alike — without
+// each of those needing to know signatures exist.
+function buildRawMessage(to: string, from: string, subject: string, body: string, signature: SignatureFields | null) {
+  const boundary = `hq_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const sigText = signature ? buildSignatureText(signature) : null;
+  const sigHtml = signature ? buildSignatureHtml(signature) : null;
+  const plainBody = sigText ? `${body}\n\n--\n${sigText}` : body;
+  const htmlBody = buildHtmlEmail(body, sigHtml);
+
   const message = [
     `To: ${to}`,
     `From: ${from}`,
     `Subject: ${subject}`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
     "Content-Type: text/plain; charset=utf-8",
     "",
-    body,
+    plainBody,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    htmlBody,
+    "",
+    `--${boundary}--`,
   ].join("\n");
   return Buffer.from(message).toString("base64url");
 }
@@ -137,8 +183,9 @@ function buildRawMessage(to: string, from: string, subject: string, body: string
 export async function sendGmail(userId: string, to: string, subject: string, body: string) {
   const client = await getClientForUser(userId);
   const conn = await prisma.gmailConnection.findUnique({ where: { userId } });
+  const signature = await getUserSignature(userId);
   const gmail = google.gmail({ version: "v1", auth: client });
-  const raw = buildRawMessage(to, conn!.email, subject, body);
+  const raw = buildRawMessage(to, conn!.email, subject, body, signature);
   const res = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
   return res.data.id as string;
 }
@@ -259,7 +306,14 @@ function buildRawReply(opts: {
   body: string;
   inReplyTo?: string;
   references?: string;
+  signature: SignatureFields | null;
 }) {
+  const boundary = `hq_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const sigText = opts.signature ? buildSignatureText(opts.signature) : null;
+  const sigHtml = opts.signature ? buildSignatureHtml(opts.signature) : null;
+  const plainBody = sigText ? `${opts.body}\n\n--\n${sigText}` : opts.body;
+  const htmlBody = buildHtmlEmail(opts.body, sigHtml);
+
   const lines = [
     `To: ${opts.to}`,
     opts.cc ? `Cc: ${opts.cc}` : null,
@@ -267,9 +321,19 @@ function buildRawReply(opts: {
     `Subject: ${opts.subject}`,
     opts.inReplyTo ? `In-Reply-To: ${opts.inReplyTo}` : null,
     opts.references ? `References: ${opts.references}` : null,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
     "Content-Type: text/plain; charset=utf-8",
     "",
-    opts.body,
+    plainBody,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    htmlBody,
+    "",
+    `--${boundary}--`,
   ].filter((l): l is string => l !== null);
   return Buffer.from(lines.join("\n")).toString("base64url");
 }
@@ -291,8 +355,9 @@ export async function sendGmailReply(
 ) {
   const client = await getClientForUser(userId);
   const conn = await prisma.gmailConnection.findUnique({ where: { userId } });
+  const signature = await getUserSignature(userId);
   const gmail = google.gmail({ version: "v1", auth: client });
-  const raw = buildRawReply({ ...opts, from: conn!.email });
+  const raw = buildRawReply({ ...opts, from: conn!.email, signature });
   const res = await gmail.users.messages.send({
     userId: "me",
     requestBody: { raw, threadId: opts.threadId },
