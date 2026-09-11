@@ -8,8 +8,8 @@
 // module; Railway's `next start` is a single long-lived process so this
 // runs exactly once there.
 
-const AUTO_RUN_INTERVAL_MS = 15 * 60 * 1000; // check every 15 minutes
-const AUTO_RUN_MIN_GAP_MS = 15 * 60 * 1000; // don't re-fire the same automation inside 15 minutes
+const AUTO_RUN_INTERVAL_MS = 2 * 60 * 1000; // check every 2 minutes (was 15 — sequence drafts in particular felt slow)
+const AUTO_RUN_MIN_GAP_MS = 15 * 60 * 1000; // still don't re-fire the same AUTOMATION inside 15 minutes; unrelated to the interval above
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -22,7 +22,7 @@ export async function register() {
   const { runDueSequenceDraftGeneration } = await import("@/lib/sequence-drafts");
   const { runDueEmailCampaignSends, runDueSmsCampaignSends } = await import("@/lib/campaigns");
 
-  g.__hqAutomationTimer = setInterval(async () => {
+  const tick = async () => {
     try {
       const results = await runDueAutomations(AUTO_RUN_MIN_GAP_MS);
       if (results.length > 0) {
@@ -87,5 +87,13 @@ export async function register() {
     } catch (err) {
       console.error("[campaigns] sms background run failed:", err);
     }
-  }, AUTO_RUN_INTERVAL_MS);
+  };
+
+  // Run once immediately on startup — otherwise, since setInterval waits a
+  // full interval before its first fire, a freshly deployed server would
+  // sit idle for AUTO_RUN_INTERVAL_MS before anything due gets picked up
+  // (a newly enrolled lead's step 0, e.g., could otherwise sit for minutes
+  // for no reason right after a deploy).
+  tick();
+  g.__hqAutomationTimer = setInterval(tick, AUTO_RUN_INTERVAL_MS);
 }

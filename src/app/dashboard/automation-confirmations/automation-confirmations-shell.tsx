@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Send, SkipForward, XCircle, Sparkles, ExternalLink } from "lucide-react";
+import { Send, SkipForward, XCircle, Sparkles, ExternalLink, RefreshCw } from "lucide-react";
 
 type Draft = {
   id: string;
@@ -22,25 +22,76 @@ type Draft = {
 // checkpoint: read the researched observation, fix it if it's off, and
 // only then does anything actually go out.
 export function AutomationConfirmationsShell({ initialDrafts }: { initialDrafts: Draft[] }) {
+  const router = useRouter();
   const [drafts, setDrafts] = useState(initialDrafts);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
+
+  // router.refresh() re-renders this from the server with new initialDrafts
+  // (e.g. after "Check for new drafts now" creates one) — sync local state
+  // so a freshly-drafted step actually shows up without a full reload.
+  useEffect(() => {
+    setDrafts(initialDrafts);
+  }, [initialDrafts]);
 
   function remove(id: string) {
     setDrafts((prev) => prev.filter((d) => d.id !== id));
   }
 
+  // Enrolling a lead (or a step becoming due) doesn't draft anything until
+  // the background tick next runs — this fires that same pass on demand,
+  // so a newly-due step's draft shows up right away instead of waiting.
+  async function checkNow() {
+    setChecking(true);
+    setCheckResult(null);
+    const res = await fetch("/api/automation-confirmations/run-now", { method: "POST" });
+    const d = await res.json().catch(() => null);
+    setChecking(false);
+    if (!res.ok || !d) {
+      setCheckResult("Failed to check for new drafts.");
+      return;
+    }
+    setCheckResult(
+      d.checked === 0
+        ? "No steps are due yet — nothing to draft right now."
+        : `Checked ${d.checked} due step${d.checked === 1 ? "" : "s"}, drafted ${d.drafted}.`
+    );
+    router.refresh();
+  }
+
+  const checkButton = (
+    <div className="mb-4 flex items-center gap-3">
+      <button
+        onClick={checkNow}
+        disabled={checking}
+        className="flex items-center gap-1.5 rounded-full border border-[var(--hq-card-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--hq-text)] disabled:opacity-50"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`} />
+        {checking ? "Checking…" : "Check for new drafts now"}
+      </button>
+      {checkResult && <p className="text-xs text-[var(--hq-text-muted)]">{checkResult}</p>}
+    </div>
+  );
+
   if (drafts.length === 0) {
     return (
-      <div className="mt-8 rounded-xl border border-dashed border-[var(--hq-card-border)] p-8 text-center">
-        <p className="text-sm text-[var(--hq-text-muted)]">Nothing waiting on confirmation right now.</p>
+      <div className="mt-6">
+        {checkButton}
+        <div className="rounded-xl border border-dashed border-[var(--hq-card-border)] p-8 text-center">
+          <p className="text-sm text-[var(--hq-text-muted)]">Nothing waiting on confirmation right now.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-6 space-y-4">
-      {drafts.map((d) => (
-        <DraftCard key={d.id} draft={d} onHandled={() => remove(d.id)} />
-      ))}
+    <div className="mt-6">
+      {checkButton}
+      <div className="space-y-4">
+        {drafts.map((d) => (
+          <DraftCard key={d.id} draft={d} onHandled={() => remove(d.id)} />
+        ))}
+      </div>
     </div>
   );
 }
