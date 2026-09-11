@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
+import { resolveOutboundEmail } from "@/lib/crm-contact";
 
 function firstNameOf(contactName: string): string {
   return contactName.trim().split(/\s+/)[0] || contactName;
@@ -197,6 +198,21 @@ export async function enrollContact(contactId: string, sequenceId: string) {
   const firstStep = sequence.steps[0];
   if (!firstStep) throw new Error("This sequence has no steps yet — add at least one before enrolling anyone.");
 
+  // Fail loudly here instead of creating an enrollment that the send/draft
+  // tick will just cancel a moment later with no visible explanation —
+  // this is exactly what silently produced a pile of instantly-CANCELED
+  // enrollments for a lead whose email lived on a People-panel person
+  // rather than the lead's own email field (now checked too, see
+  // resolveOutboundEmail).
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    include: { people: { select: { email: true } } },
+  });
+  if (!contact) throw new Error("Lead not found.");
+  if (!resolveOutboundEmail(contact)) {
+    throw new Error("This lead has no email on file — add one (on the lead or a person) before enrolling.");
+  }
+
   return prisma.sequenceEnrollment.create({
     data: {
       contactId,
@@ -222,7 +238,7 @@ export async function runDueSequenceSteps() {
   const due = await prisma.sequenceEnrollment.findMany({
     where: { status: "ACTIVE", nextSendAt: { lte: new Date() }, sequence: { requiresConfirmation: false } },
     include: {
-      contact: true,
+      contact: { include: { people: { select: { email: true } } } },
       sequence: { include: { steps: { orderBy: { order: "asc" } } } },
     },
   });
@@ -242,7 +258,8 @@ export async function runDueSequenceSteps() {
         });
         continue;
       }
-      if (!enrollment.contact.email) {
+      const toEmail = resolveOutboundEmail(enrollment.contact);
+      if (!toEmail) {
         await prisma.sequenceEnrollment.update({
           where: { id: enrollment.id },
           data: { status: "CANCELED", nextSendAt: null },
@@ -267,7 +284,7 @@ export async function runDueSequenceSteps() {
       const template = stepTemplateFor(step, enrollment.contact.language);
       const subject = fillTemplate(template.subject, enrollment.contact, repUser?.name || "");
       const body = fillTemplate(template.body, enrollment.contact, repUser?.name || "");
-      const externalId = await sendGmail(enrollment.sequence.createdById, enrollment.contact.email, subject, body);
+      const externalId = await sendGmail(enrollment.sequence.createdById, toEmail, subject, body);
 
       await prisma.interaction.create({
         data: {
@@ -277,7 +294,7 @@ export async function runDueSequenceSteps() {
           direction: "OUTBOUND",
           subject,
           body,
-          toAddress: enrollment.contact.email,
+          toAddress: toEmail,
           externalId,
           sequenceEnrollmentId: enrollment.id,
           sequenceStepOrder: stepOrder,

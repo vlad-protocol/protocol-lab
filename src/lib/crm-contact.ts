@@ -78,3 +78,17 @@ export async function findOrCreateContactByEmail(email: string, createdById: str
   });
   return created.id;
 }
+
+// Which address to actually send a sequence step (or anything else
+// automated) to for this lead. A lead's own Contact.email is often blank
+// when it was added with only a person recorded via the People panel —
+// falling back to the first ContactPerson with an email means an
+// enrollment doesn't get silently canceled with "no email on file" just
+// because the address lives on the person instead of the lead itself.
+export function resolveOutboundEmail(contact: {
+  email: string | null;
+  people?: { email: string | null }[];
+}): string | null {
+  if (contact.email) return contact.email;
+  return contact.people?.find((p) => p.email)?.email || null;
+}

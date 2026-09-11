@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
 import { daysToMs, fillTemplate, stepTemplateFor } from "@/lib/sequences";
 import { researchStepPersonalization } from "@/lib/sequence-research";
+import { resolveOutboundEmail } from "@/lib/crm-contact";
 
 // The confirmation-gated counterpart to runDueSequenceSteps (see
 // sequences.ts) — for any ACTIVE enrollment on a requiresConfirmation
@@ -15,7 +16,7 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
   const due = await prisma.sequenceEnrollment.findMany({
     where: { status: "ACTIVE", nextSendAt: { lte: new Date() }, sequence: { requiresConfirmation: true } },
     include: {
-      contact: true,
+      contact: { include: { people: { select: { email: true } } } },
       sequence: { include: { steps: { orderBy: { order: "asc" } } } },
     },
   });
@@ -35,7 +36,7 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
         });
         continue;
       }
-      if (!enrollment.contact.email) {
+      if (!resolveOutboundEmail(enrollment.contact)) {
         await prisma.sequenceEnrollment.update({
           where: { id: enrollment.id },
           data: { status: "CANCELED", nextSendAt: null },
@@ -116,7 +117,10 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
     where: { id: draftId },
     include: {
       enrollment: {
-        include: { contact: true, sequence: { include: { steps: { orderBy: { order: "asc" } } } } },
+        include: {
+          contact: { include: { people: { select: { email: true } } } },
+          sequence: { include: { steps: { orderBy: { order: "asc" } } } },
+        },
       },
     },
   });
@@ -124,13 +128,14 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
   if (draft.status !== "PENDING") throw new Error("This draft has already been handled.");
 
   const { enrollment } = draft;
-  if (!enrollment.contact.email) throw new Error("This lead has no email on file.");
+  const toEmail = resolveOutboundEmail(enrollment.contact);
+  if (!toEmail) throw new Error("This lead has no email on file.");
   if (!enrollment.sequence.createdById) throw new Error("This sequence has no owner.");
 
   const gmailConn = await prisma.gmailConnection.findUnique({ where: { userId: enrollment.sequence.createdById } });
   if (!gmailConn) throw new Error("The sequence owner's Gmail isn't connected.");
 
-  const externalId = await sendGmail(enrollment.sequence.createdById, enrollment.contact.email, draft.subject, draft.body);
+  const externalId = await sendGmail(enrollment.sequence.createdById, toEmail, draft.subject, draft.body);
 
   await prisma.interaction.create({
     data: {
@@ -140,7 +145,7 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
       direction: "OUTBOUND",
       subject: draft.subject,
       body: draft.body,
-      toAddress: enrollment.contact.email,
+      toAddress: toEmail,
       externalId,
       sequenceEnrollmentId: enrollment.id,
       sequenceStepOrder: draft.stepOrder,
