@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Image as ImageIcon, Heading, Type, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { useRef, useState } from "react";
+import { Image as ImageIcon, Heading, Type, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown, Plus, Upload, Loader2 } from "lucide-react";
 import {
   type EmailBlock,
   type EmailSettings,
@@ -201,7 +201,12 @@ function BlockRow({
         {block.type === "image" && (
           <>
             <div className="col-span-2">
-              <Field label="Image URL">
+              <Field label="Image">
+                <ImageUploadField url={block.url} onUploaded={(url) => onUpdate({ url })} />
+              </Field>
+            </div>
+            <div className="col-span-2">
+              <Field label="Or paste an image URL directly">
                 <input className={inputCls} value={block.url} onChange={(e) => onUpdate({ url: e.target.value })} placeholder="https://…" />
               </Field>
             </div>
@@ -289,6 +294,67 @@ function BlockRow({
           </Field>
         )}
       </div>
+    </div>
+  );
+}
+
+function ImageUploadField({ url, onUploaded }: { url: string; onUploaded: (url: string) => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(file: File) {
+    setError(null);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/uploads", { method: "POST", body: form });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error || "Upload failed.");
+        return;
+      }
+      onUploaded(d.url);
+    } catch {
+      setError("Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 rounded-md border border-[var(--hq-card-border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--hq-text)] disabled:opacity-60"
+        >
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {uploading ? "Uploading…" : "Upload image"}
+        </button>
+        {url && <span className="truncate text-xs text-emerald-600">Image set</span>}
+      </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {url && (
+        <div className="mt-2 overflow-hidden rounded-md border border-[var(--hq-card-border)] bg-neutral-50" style={{ maxWidth: 220 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="" className="block max-h-32 w-full object-contain" />
+        </div>
+      )}
     </div>
   );
 }

@@ -60,6 +60,7 @@ model User {
   emailCampaigns      EmailCampaign[]
   smsCampaigns        SmsCampaign[]
   protocolListMembers ProtocolListMember[]
+  uploadedImages      UploadedImage[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -913,4 +914,21 @@ model ProtocolListMember {
 
   @@index([email])
   @@index([phone])
+}
+
+// Images uploaded through the campaign email block editor. Stored as raw
+// bytes in the database rather than on disk/S3, since Railway's app
+// containers don't have persistent storage across deploys — this way an
+// uploaded image survives redeploys with zero extra infra. Served back
+// out at /api/uploads/[id] with a long cache lifetime, and that URL is
+// what actually goes into the sent email's <img src>.
+model UploadedImage {
+  id          String   @id @default(cuid())
+  data        Bytes
+  contentType String
+  filename    String?
+  size        Int
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
 }

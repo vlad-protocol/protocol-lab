@@ -281,16 +281,21 @@ export async function runDueEmailCampaignSends(baseUrl: string) {
       const subject = fillTemplate(send.campaign.subject, nameCtx);
 
       let html: string;
+      let text: string;
       const blocks = send.campaign.blocks as unknown as EmailBlock[] | null;
       if (blocks && blocks.length > 0) {
+        const filledBlocks = fillBlocksTemplate(blocks, nameCtx);
         const settings = (send.campaign.settings as unknown as EmailSettings | null) || DEFAULT_EMAIL_SETTINGS;
-        html = renderEmailBlocksHtml(fillBlocksTemplate(blocks, nameCtx), settings);
+        html = renderEmailBlocksHtml(filledBlocks, settings);
+        text = blocksToPlainText(filledBlocks);
       } else {
         html = fillTemplate(send.campaign.body, nameCtx);
+        text = html.replace(/<[^>]+>/g, "").trim();
       }
       html = wrapLinksForClickTracking(html, baseUrl, send.id) + unsubscribeFooterHtml(baseUrl, send.toEmail) + trackingPixelHtml(baseUrl, send.id);
+      text = `${text}\n\nDon't want these emails? Unsubscribe: ${baseUrl}/unsubscribe/${signUnsubscribeToken(send.toEmail)}`;
 
-      const messageId = await sendSesEmail(send.toEmail, subject, html);
+      const messageId = await sendSesEmail(send.toEmail, subject, html, text);
       await prisma.emailSend.update({
         where: { id: send.id },
         data: { status: "SENT", sentAt: new Date(), externalId: messageId },
