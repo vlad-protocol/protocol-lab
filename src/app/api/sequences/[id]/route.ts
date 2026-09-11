@@ -11,17 +11,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
 
   const body = await req.json();
-  const { name, description, enabled, steps } = body as {
+  const { name, description, enabled, requiresConfirmation, steps } = body as {
     name?: string;
     description?: string | null;
     enabled?: boolean;
-    steps?: { delayDays: number; subject: string; body: string }[];
+    requiresConfirmation?: boolean;
+    steps?: { delayDays: number; subject: string; body: string; researchAngle?: string | null }[];
   };
 
   const data: Record<string, unknown> = {};
   if (name !== undefined) data.name = name;
   if (description !== undefined) data.description = description;
   if (enabled !== undefined) data.enabled = enabled;
+  if (requiresConfirmation !== undefined) data.requiresConfirmation = requiresConfirmation;
 
   // Steps are replaced wholesale rather than diffed — simplest correct
   // option given a sequence is edited as a whole form, not field-by-field.
@@ -38,6 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           delayDays: Math.max(0, Number(s.delayDays) || 0),
           subject: s.subject,
           body: s.body,
+          researchAngle: s.researchAngle?.trim() || null,
         })),
       }),
     ]);

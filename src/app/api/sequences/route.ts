@@ -28,10 +28,11 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { name, description, steps } = body as {
+  const { name, description, requiresConfirmation, steps } = body as {
     name?: string;
     description?: string;
-    steps?: { delayDays: number; subject: string; body: string }[];
+    requiresConfirmation?: boolean;
+    steps?: { delayDays: number; subject: string; body: string; researchAngle?: string | null }[];
   };
 
   if (!name || !steps?.length) {
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
     data: {
       name,
       description: description || null,
+      requiresConfirmation: !!requiresConfirmation,
       createdById: session.user.id,
       steps: {
         create: steps.map((s, i) => ({
@@ -49,6 +51,7 @@ export async function POST(req: Request) {
           delayDays: Math.max(0, Number(s.delayDays) || 0),
           subject: s.subject,
           body: s.body,
+          researchAngle: s.researchAngle?.trim() || null,
         })),
       },
     },

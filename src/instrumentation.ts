@@ -19,6 +19,7 @@ export async function register() {
 
   const { runDueAutomations } = await import("@/lib/automations");
   const { runDueSequenceSteps } = await import("@/lib/sequences");
+  const { runDueSequenceDraftGeneration } = await import("@/lib/sequence-drafts");
   const { runDueEmailCampaignSends, runDueSmsCampaignSends } = await import("@/lib/campaigns");
 
   g.__hqAutomationTimer = setInterval(async () => {
@@ -43,6 +44,23 @@ export async function register() {
       }
     } catch (err) {
       console.error("[sequences] background run failed:", err);
+    }
+
+    try {
+      // Same tick — for any sequence with requiresConfirmation on, drafts
+      // the due step (researching its personalized observation) instead
+      // of sending it, so it can wait for manual review in Automation
+      // Confirmations. See src/lib/sequence-drafts.ts.
+      const baseUrl = process.env.PUBLIC_APP_URL || "http://localhost:3000";
+      const draftResults = await runDueSequenceDraftGeneration(baseUrl);
+      if (draftResults.length > 0) {
+        console.log(
+          `[sequences] drafted ${draftResults.filter((r) => r.drafted).length}/${draftResults.length}:`,
+          draftResults.map((r) => (r.error ? `${r.contactName} (failed: ${r.error})` : r.contactName)).join(", ")
+        );
+      }
+    } catch (err) {
+      console.error("[sequences] draft generation background run failed:", err);
     }
 
     try {

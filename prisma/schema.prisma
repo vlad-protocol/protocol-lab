@@ -32,35 +32,36 @@ model User {
   invitedUsers User[]   @relation("Invites")
   createdAt    DateTime @default(now())
 
-  reels               Reel[]
-  stats               WeeklyStat[]
-  contactsCreated     Contact[]            @relation("CreatedBy")
-  interactions        Interaction[]
-  automations         Automation[]
-  emailTemplates      EmailTemplate[]
-  emailSequences      EmailSequence[]
-  gmailConnection     GmailConnection?
-  trainingCheckIns    TrainingCheckIn[]
-  shootCards          ShootCard[]
-  labEntries          StudioEntry[]
-  brainEntries        BrainEntry[]
-  calendarEvents      CalendarEvent[]
-  availabilities      Availability[]
-  docs                DocRecord[]
-  recordings          Recording[]
-  meetingNotes        MeetingNote[]
-  igAutomations       IGAutomation[]
-  adCampaigns         AdCampaign[]
-  cfoTransactions     CFOTransaction[]
-  cfoBudgetCategories CFOBudgetCategory[]
-  cfoMerchantRules    CFOMerchantRule[]
-  cfoRecurringBills   CFORecurringBill[]
-  cfoGoals            CFOGoal[]
-  cfoDebts            CFODebt[]
-  emailCampaigns      EmailCampaign[]
-  smsCampaigns        SmsCampaign[]
-  protocolListMembers ProtocolListMember[]
-  uploadedImages      UploadedImage[]
+  reels                   Reel[]
+  stats                   WeeklyStat[]
+  contactsCreated         Contact[]            @relation("CreatedBy")
+  interactions            Interaction[]
+  automations             Automation[]
+  emailTemplates          EmailTemplate[]
+  emailSequences          EmailSequence[]
+  gmailConnection         GmailConnection?
+  trainingCheckIns        TrainingCheckIn[]
+  shootCards              ShootCard[]
+  labEntries              StudioEntry[]
+  brainEntries            BrainEntry[]
+  calendarEvents          CalendarEvent[]
+  availabilities          Availability[]
+  docs                    DocRecord[]
+  recordings              Recording[]
+  meetingNotes            MeetingNote[]
+  igAutomations           IGAutomation[]
+  adCampaigns             AdCampaign[]
+  cfoTransactions         CFOTransaction[]
+  cfoBudgetCategories     CFOBudgetCategory[]
+  cfoMerchantRules        CFOMerchantRule[]
+  cfoRecurringBills       CFORecurringBill[]
+  cfoGoals                CFOGoal[]
+  cfoDebts                CFODebt[]
+  emailCampaigns          EmailCampaign[]
+  smsCampaigns            SmsCampaign[]
+  protocolListMembers     ProtocolListMember[]
+  uploadedImages          UploadedImage[]
+  confirmedSequenceDrafts SequenceStepDraft[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -305,29 +306,48 @@ enum SequenceEnrollmentStatus {
   REPLIED
   COMPLETED
   CANCELED
+  // A step's draft has been generated (subject/body, with any AI-researched
+  // personalization) and is sitting in Automation Confirmations waiting for
+  // a human to review and confirm — see SequenceStepDraft below. Never
+  // picked up by the ACTIVE-only send tick, so nothing goes out on its own.
+  AWAITING_CONFIRMATION
 }
 
 model EmailSequence {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  enabled     Boolean  @default(true)
-  createdById String?
-  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
+  id                   String   @id @default(cuid())
+  name                 String
+  description          String?
+  enabled              Boolean  @default(true)
+  // When true, no step of this sequence ever sends automatically — each
+  // due step instead generates a SequenceStepDraft for manual review in
+  // Automation Confirmations. Meant for cold outreach that leans on a
+  // personalized, researched observation the rep needs to eyeball for
+  // accuracy before it goes out; a plain templated sequence can leave
+  // this off and keep sending straight through like before.
+  requiresConfirmation Boolean  @default(false)
+  createdById          String?
+  createdBy            User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime @default(now())
 
   steps       EmailSequenceStep[]
   enrollments SequenceEnrollment[]
 }
 
 model EmailSequenceStep {
-  id         String        @id @default(cuid())
-  sequenceId String
-  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
-  order      Int // 0-based position within the sequence
-  delayDays  Int // days after the previous step (or after enrollment, for step 0)
-  subject    String
-  body       String // supports {{contactName}}, {{companyName}}, {{repName}} merge fields
+  id            String        @id @default(cuid())
+  sequenceId    String
+  sequence      EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  order         Int // 0-based position within the sequence
+  // What to research and drop into this step's {{observation}} /
+  // {{hook}} tokens (see src/lib/sequence-research.ts) — e.g. "a specific,
+  // personalized hook: why Protocol and this brand's audience overlap
+  // right now." Null/blank means this step needs no personalization
+  // research at all (a plain merge-field send, or the sequence doesn't
+  // require confirmation in the first place).
+  researchAngle String?
+  delayDays     Int // days after the previous step (or after enrollment, for step 0)
+  subject       String
+  body          String // supports {{contactName}}, {{firstName}}, {{companyName}}, {{brand}}, {{repName}}, {{observation}}, {{hook}}, {{bookingLink}} merge fields
 
   @@index([sequenceId, order])
 }
@@ -344,8 +364,47 @@ model SequenceEnrollment {
   lastSentAt  DateTime?
   enrolledAt  DateTime                 @default(now())
 
+  drafts SequenceStepDraft[]
+
   @@index([status, nextSendAt])
   @@index([contactId])
+}
+
+enum SequenceDraftStatus {
+  PENDING
+  SENT
+  REJECTED
+}
+
+// A drafted step for a sequence whose `requiresConfirmation` is on — the
+// tick generates one of these (with any AI-researched personalization
+// already merged into subject/body) instead of sending straight away, and
+// it sits on the Automation Confirmations page until a person reviews the
+// research for accuracy, edits it if needed, and either confirms (sends
+// it and advances the enrollment) or rejects it (skips this step, or
+// cancels the enrollment outright).
+model SequenceStepDraft {
+  id            String              @id @default(cuid())
+  enrollmentId  String
+  enrollment    SequenceEnrollment  @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  stepOrder     Int
+  subject       String
+  body          String
+  // Human-readable note on how the personalization was produced — live
+  // web-search findings and sources, or a note that research wasn't
+  // available and the rep should fill it in by hand. Shown next to the
+  // draft so the confirmation isn't just "trust me."
+  researchNotes String?
+  status        SequenceDraftStatus @default(PENDING)
+  createdAt     DateTime            @default(now())
+  confirmedAt   DateTime?
+  confirmedById String?
+  confirmedBy   User?               @relation(fields: [confirmedById], references: [id], onDelete: SetNull)
+  sentAt        DateTime?
+  error         String?
+
+  @@unique([enrollmentId, stepOrder])
+  @@index([status])
 }
 
 // --- Integrations -----------------------------------------------------

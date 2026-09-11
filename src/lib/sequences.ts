@@ -1,71 +1,106 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
 
-function fillTemplate(
+function firstNameOf(contactName: string): string {
+  return contactName.trim().split(/\s+/)[0] || contactName;
+}
+
+// extra covers the cold-outreach-only tokens: {{observation}} and
+// {{hook}} (AI-researched personalization, see sequence-drafts.ts) and
+// {{bookingLink}}. Plain sequences that never set requiresConfirmation
+// simply never reference those tokens, so passing {} for extra is a
+// no-op for them.
+export function fillTemplate(
   text: string,
   contact: { contactName: string; companyName: string | null },
-  repName: string
+  repName: string,
+  extra: { observation?: string; hook?: string; bookingLink?: string } = {}
 ) {
+  const brand = contact.companyName || contact.contactName;
   return text
     .replaceAll("{{contactName}}", contact.contactName)
+    .replaceAll("{{firstName}}", firstNameOf(contact.contactName))
     .replaceAll("{{companyName}}", contact.companyName || "")
-    .replaceAll("{{repName}}", repName);
+    .replaceAll("{{brand}}", brand)
+    .replaceAll("{{repName}}", repName)
+    .replaceAll("{{observation}}", extra.observation || "")
+    .replaceAll("{{hook}}", extra.hook || "")
+    .replaceAll("{{bookingLink}}", extra.bookingLink || "");
 }
 
 export function daysToMs(days: number) {
   return days * 24 * 60 * 60 * 1000;
 }
 
-// Default 3-touch sequence, matching "email 1 when first contacted, email 2
-// is a reminder, email 3 is a last check-in before we stop" — created once,
-// automatically, the first time anyone opens the Sequences page on an
-// account with none yet. Fully editable afterward; nothing here auto-enrolls
-// anyone, so seeding it has no effect until a lead is actually enrolled.
+// Default 3-touch cold-outreach sequence for Protocol sponsorship leads —
+// hook, value-add, breakup — created once, automatically, the first time
+// anyone opens the Sequences page on an account with none yet. Fully
+// editable afterward; nothing here auto-enrolls anyone, so seeding it has
+// no effect until a lead is actually enrolled.
+//
+// requiresConfirmation is on: the first two steps lean on a specific,
+// researched observation about the brand (see researchAngle below and
+// src/lib/sequence-research.ts), so every step's draft — personalization
+// included — waits in Automation Confirmations for a human to check
+// before it actually sends, rather than going out untouched.
 export async function getOrSeedDefaultSequence(userId: string) {
   const existing = await prisma.emailSequence.findFirst();
   if (existing) return;
 
   await prisma.emailSequence.create({
     data: {
-      name: "New Lead Follow-Up",
-      description: "3-touch sequence for a freshly contacted lead: intro, reminder, final check-in.",
+      name: "Sponsor Cold Outreach",
+      description:
+        "3-touch cold email sequence for Protocol sponsorship leads: hook, value-add, breakup. Every step's personalized observation is researched and drafted automatically, then waits for your confirmation in Automation Confirmations before it sends.",
       enabled: true,
+      requiresConfirmation: true,
       createdById: userId,
       steps: {
         create: [
           {
             order: 0,
             delayDays: 0,
-            subject: "Great connecting, {{contactName}}",
-            body: `Hi {{contactName}},
+            researchAngle:
+              "A specific, personalized hook — one real, current, checkable reason Protocol (a Montreal sober rave built around a group workout: real sweat first, then a DJ set) and this brand's audience overlap right now. E.g. a recent launch, event, sponsorship, or audience move.",
+            subject: "{{hook}} + Protocol x {{brand}}",
+            body: `Hi {{firstName}},
 
-Thanks for your interest — wanted to follow up and see if you have any questions I can help with.
+{{observation}}
 
-Let me know what works best for you.
+Quick intro: we run Protocol — AFTR:HOURS, a sober rave built around a workout. Real sweat first, then a DJ takes over. It's become Montreal's spot for the healthiest people in the nightlife scene, and the most fun people in the fitness scene.
 
-Best,
-{{repName}}`,
+{{brand}} would be in front of exactly that room. We've got sponsorship tiers from $500 to $2,500+, plus in-kind trade options.
+
+Got 15 minutes this week to see if there's a fit?
+
+{{repName}}
+Protocol | protocolevnts@gmail.com | @byprotocol | protocolevent.com`,
           },
           {
             order: 1,
-            delayDays: 4,
-            subject: "Following up — {{contactName}}",
-            body: `Hi {{contactName}},
+            delayDays: 2,
+            researchAngle:
+              "One genuinely useful, specific observation about this brand or the audience they reach — not a pitch, something with real insight, e.g. about what's working for them right now or a trend touching their audience.",
+            subject: "Re: Protocol x {{brand}}",
+            body: `Hi {{firstName}},
 
-Just wanted to bump this back up in case it got buried. Happy to answer any questions or set up a quick call whenever works for you.
+Following up in case this got buried. One thing regardless of whether we ever talk: {{observation}}
 
-Best,
+If it's useful to compare notes on what's working with this audience right now, happy to hop on a quick call — no pitch, just conversation. {{bookingLink}}
+
 {{repName}}`,
           },
           {
             order: 2,
-            delayDays: 5,
-            subject: "Still interested?",
-            body: `Hi {{contactName}},
+            delayDays: 4,
+            researchAngle: null,
+            subject: "Should I close the loop?",
+            body: `Hi {{firstName}},
 
-We've tried reaching out a couple of times now — totally understand if the timing isn't right. Just let me know if you'd like to keep the conversation going, or if we should check back another time.
+Haven't heard back — figuring the timing's not right, and that's all good.
 
-Best,
+If reaching health-focused young professionals in Montreal becomes a priority down the line, I'm around. Rooting for {{brand}} either way.
+
 {{repName}}`,
           },
         ],
@@ -103,9 +138,14 @@ export async function enrollContact(contactId: string, sequenceId: string) {
 // as a normal outbound Interaction (so it shows up in the contact's
 // conversation same as any other sent email), and advances to the next
 // step — or marks the enrollment COMPLETED if that was the last one.
+//
+// Excludes any sequence with requiresConfirmation on — those go through
+// runDueSequenceDraftGeneration (src/lib/sequence-drafts.ts) instead,
+// which drafts a personalized step for manual review rather than sending
+// straight away.
 export async function runDueSequenceSteps() {
   const due = await prisma.sequenceEnrollment.findMany({
-    where: { status: "ACTIVE", nextSendAt: { lte: new Date() } },
+    where: { status: "ACTIVE", nextSendAt: { lte: new Date() }, sequence: { requiresConfirmation: false } },
     include: {
       contact: true,
       sequence: { include: { steps: { orderBy: { order: "asc" } } } },

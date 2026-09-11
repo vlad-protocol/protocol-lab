@@ -33,7 +33,16 @@ export default async function SequencesPage() {
         automatically — enroll a lead from their contact page, and each step sends on
         its own schedule from whoever created the sequence's connected Gmail. A reply
         from the lead automatically pauses their enrollment. Use {"{{contactName}}"},{" "}
-        {"{{companyName}}"}, and {"{{repName}}"} in the subject or body to personalize.
+        {"{{firstName}}"}, {"{{companyName}}"}, {"{{brand}}"}, {"{{repName}}"},{" "}
+        {"{{bookingLink}}"}, and {"{{observation}}"}/{"{{hook}}"} (only if this sequence
+        requires confirmation — see below) in the subject or body to personalize. A
+        sequence with "Require confirmation" on never sends a step on its own: each due
+        step researches its observation (if it has one), drafts the merged email, and
+        waits for you to review and confirm it on the{" "}
+        <a href="/dashboard/automation-confirmations" className="text-[var(--hq-accent)] hover:underline">
+          Automation Confirmations
+        </a>{" "}
+        page.
       </p>
 
       <SequencesClient
@@ -42,6 +51,7 @@ export default async function SequencesPage() {
           name: s.name,
           description: s.description,
           enabled: s.enabled,
+          requiresConfirmation: s.requiresConfirmation,
           activeCount: s._count.enrollments,
           createdBy: s.createdBy,
           steps: s.steps.map((st) => ({
@@ -49,6 +59,7 @@ export default async function SequencesPage() {
             delayDays: st.delayDays,
             subject: st.subject,
             body: st.body,
+            researchAngle: st.researchAngle,
           })),
         }))}
       />

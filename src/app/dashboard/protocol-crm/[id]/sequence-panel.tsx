@@ -8,7 +8,7 @@ import { Send, Pause, Play, X } from "lucide-react";
 type Sequence = { id: string; name: string };
 type Enrollment = {
   id: string;
-  status: "ACTIVE" | "PAUSED" | "REPLIED" | "COMPLETED" | "CANCELED";
+  status: "ACTIVE" | "PAUSED" | "REPLIED" | "COMPLETED" | "CANCELED" | "AWAITING_CONFIRMATION";
   currentStep: number;
   nextSendAt: string | null;
   lastSentAt: string | null;
@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<Enrollment["status"], string> = {
   REPLIED: "Paused — they replied",
   COMPLETED: "Completed",
   CANCELED: "Canceled",
+  AWAITING_CONFIRMATION: "Draft awaiting your confirmation",
 };
 
 const STATUS_COLOR: Record<Enrollment["status"], string> = {
@@ -29,6 +30,7 @@ const STATUS_COLOR: Record<Enrollment["status"], string> = {
   REPLIED: "bg-amber-50 text-amber-700",
   COMPLETED: "bg-[var(--hq-positive)]/10 text-[var(--hq-positive)]",
   CANCELED: "bg-[var(--hq-canvas)] text-[var(--hq-text-muted)]",
+  AWAITING_CONFIRMATION: "bg-[var(--hq-accent)]/10 text-[var(--hq-accent)]",
 };
 
 export function SequencePanel({
@@ -81,7 +83,9 @@ export function SequencePanel({
   }
 
   const activeSequenceIds = new Set(
-    enrollments.filter((e) => e.status === "ACTIVE" || e.status === "PAUSED" || e.status === "REPLIED").map((e) => e.sequence.id)
+    enrollments
+      .filter((e) => e.status === "ACTIVE" || e.status === "PAUSED" || e.status === "REPLIED" || e.status === "AWAITING_CONFIRMATION")
+      .map((e) => e.sequence.id)
   );
   const availableToEnroll = sequences.filter((s) => !activeSequenceIds.has(s.id));
 
@@ -141,6 +145,14 @@ export function SequencePanel({
                 >
                   <X className="h-4 w-4" />
                 </button>
+              )}
+              {e.status === "AWAITING_CONFIRMATION" && (
+                <Link
+                  href="/dashboard/automation-confirmations"
+                  className="text-xs font-medium text-[var(--hq-accent)] hover:underline"
+                >
+                  Review draft
+                </Link>
               )}
             </div>
           </div>

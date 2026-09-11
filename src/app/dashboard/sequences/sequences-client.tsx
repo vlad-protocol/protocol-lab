@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Mail, Sparkles } from "lucide-react";
 
-type Step = { id?: string; delayDays: number; subject: string; body: string };
+type Step = { id?: string; delayDays: number; subject: string; body: string; researchAngle?: string | null };
 type Sequence = {
   id: string;
   name: string;
   description: string | null;
   enabled: boolean;
+  requiresConfirmation: boolean;
   activeCount: number;
   createdBy: { id: string; name: string | null; email: string } | null;
   steps: Step[];
 };
 
-const EMPTY_STEP: Step = { delayDays: 0, subject: "", body: "" };
+const EMPTY_STEP: Step = { delayDays: 0, subject: "", body: "", researchAngle: "" };
 
 export function SequencesClient({ initialSequences }: { initialSequences: Sequence[] }) {
   const router = useRouter();
@@ -25,6 +26,7 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newSteps, setNewSteps] = useState<Step[]>([{ ...EMPTY_STEP }]);
+  const [newRequiresConfirmation, setNewRequiresConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +37,12 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
     const res = await fetch("/api/sequences", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName, description: newDescription || undefined, steps: newSteps }),
+      body: JSON.stringify({
+        name: newName,
+        description: newDescription || undefined,
+        requiresConfirmation: newRequiresConfirmation,
+        steps: newSteps,
+      }),
     });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
@@ -47,6 +54,7 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
     setNewName("");
     setNewDescription("");
     setNewSteps([{ ...EMPTY_STEP }]);
+    setNewRequiresConfirmation(false);
     setSequences((s) => [
       ...s,
       { ...d.sequence, activeCount: 0, createdBy: null, steps: d.sequence.steps },
@@ -60,6 +68,15 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
+    });
+  }
+
+  async function toggleRequiresConfirmation(id: string, requiresConfirmation: boolean) {
+    setSequences((s) => s.map((x) => (x.id === id ? { ...x, requiresConfirmation } : x)));
+    await fetch(`/api/sequences/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requiresConfirmation }),
     });
   }
 
@@ -112,6 +129,14 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
             value={newDescription}
             onChange={(e) => setNewDescription(e.target.value)}
           />
+          <label className="flex items-center gap-1.5 text-xs text-[var(--hq-text-muted)]">
+            <input
+              type="checkbox"
+              checked={newRequiresConfirmation}
+              onChange={(e) => setNewRequiresConfirmation(e.target.checked)}
+            />
+            Require confirmation before sending (drafts wait in Automation Confirmations)
+          </label>
           <StepEditor steps={newSteps} onChange={setNewSteps} />
           <button disabled={busy} className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
             Create sequence
@@ -146,6 +171,14 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
               </button>
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1.5 text-xs text-[var(--hq-text-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={seq.requiresConfirmation}
+                    onChange={(e) => toggleRequiresConfirmation(seq.id, e.target.checked)}
+                  />
+                  Require confirmation
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-[var(--hq-text-muted)]">
                   <input type="checkbox" checked={seq.enabled} onChange={(e) => toggleEnabled(seq.id, e.target.checked)} />
                   Enabled
                 </label>
@@ -156,6 +189,12 @@ export function SequencesClient({ initialSequences }: { initialSequences: Sequen
             </div>
 
             {seq.description && <p className="mt-2 text-xs text-[var(--hq-text-muted)]">{seq.description}</p>}
+            {seq.requiresConfirmation && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-[var(--hq-accent)]">
+                <Sparkles className="h-3 w-3" /> Drafts wait for confirmation on the Automation Confirmations page
+                instead of sending automatically.
+              </p>
+            )}
 
             {expanded === seq.id && (
               <div className="mt-4 border-t border-[var(--hq-card-border)] pt-4">
@@ -225,11 +264,18 @@ function StepEditor({ steps, onChange }: { steps: Step[]; onChange: (steps: Step
             )}
           </div>
           <textarea
-            placeholder="Body — use {{contactName}}, {{companyName}}, {{repName}}"
+            placeholder="Body — use {{contactName}}, {{firstName}}, {{companyName}}, {{brand}}, {{repName}}, {{bookingLink}}, {{observation}}, {{hook}}"
             rows={3}
             className="mt-2 w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1.5 text-sm"
             value={step.body}
             onChange={(e) => update(i, { body: e.target.value })}
+          />
+          <textarea
+            placeholder="AI research angle (optional) — what to research and fill into {{observation}}/{{hook}} for this step. Leave blank if this step needs no personalization research."
+            rows={2}
+            className="mt-2 w-full rounded-md border border-dashed border-[var(--hq-card-border)] px-2 py-1.5 text-xs text-[var(--hq-text-muted)]"
+            value={step.researchAngle || ""}
+            onChange={(e) => update(i, { researchAngle: e.target.value })}
           />
         </div>
       ))}
