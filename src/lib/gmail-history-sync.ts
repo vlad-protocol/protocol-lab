@@ -1,27 +1,29 @@
 import { prisma } from "@/lib/prisma";
-import { listGmailSentPage, extractEmailAddresses, extractEmailAddress } from "@/lib/integrations/gmail";
+import { listGmailMessagesPage, extractEmailAddresses, extractEmailAddress } from "@/lib/integrations/gmail";
 
 // One-time backfill: walks every message in the connected Gmail
-// account's "Sent" label (not just the last N), and for each one, links
-// it to every CRM contact whose email shows up in the To, Cc, or From
-// header — so a lead who was only cc'd (not the primary recipient), or
-// who shows up as the From on a delegated/aliased send, still gets the
-// email attached to their record, same as a lead who was sent to
-// directly.
+// account's Sent mail, then every message in Inbox — not just the last
+// N of either — and for each one, links it to every CRM contact whose
+// email shows up in the To, Cc, or From header. So a lead shows up on
+// their CRM timeline no matter which direction the email went (you sent
+// it, they sent it) and no matter whether they were the primary
+// recipient or only cc'd.
 //
-// A mailbox can hold thousands of sent messages, and Gmail's API is one
+// A mailbox can hold thousands of messages, and Gmail's API is one
 // message per network round-trip for headers, so this can't run in a
 // single request without risking a timeout. Instead each call processes
 // a bounded number of messages (respecting a wall-clock time budget) and
-// persists a Gmail pageToken cursor on GmailConnection so the next call
-// picks up exactly where the last one left off. The client just calls
-// this repeatedly until it reports done.
+// persists a Gmail pageToken cursor plus which phase (Sent vs Inbox)
+// it's in, so the next call picks up exactly where the last one left
+// off. The client just calls this repeatedly until it reports done.
 //
 // Dedup is per (message, contact) pair rather than per message alone —
 // deliberately, since one email can legitimately need to attach to
 // several different leads (one in To, another in Cc).
 
 const PAGE_SIZE = 25;
+const PHASE_LABELS: Record<string, string[]> = { SENT: ["SENT"], INBOX: ["INBOX"] };
+const NEXT_PHASE: Record<string, string> = { SENT: "INBOX", INBOX: "DONE" };
 
 export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000) {
   const started = Date.now();
@@ -29,20 +31,22 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
   if (!conn) throw new Error("This user hasn't connected Gmail yet.");
 
   if (conn.historySyncDone) {
-    return { done: true, processed: conn.historySyncProcessed, matched: conn.historySyncMatched };
+    return { done: true, phase: conn.historySyncPhase, processed: conn.historySyncProcessed, matched: conn.historySyncMatched };
   }
 
   if (!conn.historySyncStartedAt) {
     await prisma.gmailConnection.update({ where: { userId }, data: { historySyncStartedAt: new Date() } });
   }
 
+  let phase = conn.historySyncPhase || "SENT";
   let cursor = conn.historySyncCursor || undefined;
   let processed = conn.historySyncProcessed;
   let matchedTotal = conn.historySyncMatched;
   let done = false;
 
-  while (Date.now() - started < budgetMs) {
-    const { messages, nextPageToken } = await listGmailSentPage(userId, cursor, PAGE_SIZE);
+  while (Date.now() - started < budgetMs && phase !== "DONE") {
+    const direction = phase === "SENT" ? "OUTBOUND" : "INBOUND";
+    const { messages, nextPageToken } = await listGmailMessagesPage(userId, PHASE_LABELS[phase], cursor, PAGE_SIZE);
 
     if (messages.length > 0) {
       const allAddresses = new Set<string>();
@@ -66,13 +70,13 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
       type Pair = { externalId: string; contactId: string; m: typeof messages[number] };
       const pairs: Pair[] = [];
       for (const m of messages) {
-        const recipientAddrs = new Set([
+        const addrs = new Set([
           ...extractEmailAddresses(m.to),
           ...extractEmailAddresses(m.cc),
           ...extractEmailAddresses(m.from),
         ]);
         const contactIdsForMessage = new Set<string>();
-        for (const addr of recipientAddrs) {
+        for (const addr of addrs) {
           const contactId = contactByEmail.get(addr);
           if (contactId) contactIdsForMessage.add(contactId);
         }
@@ -95,9 +99,9 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
               const parsedDate = new Date(p.m.date);
               return {
                 contactId: p.contactId,
-                userId,
+                userId: direction === "OUTBOUND" ? userId : undefined,
                 type: "EMAIL" as const,
-                direction: "OUTBOUND" as const,
+                direction: direction as "OUTBOUND" | "INBOUND",
                 subject: p.m.subject || null,
                 body: p.m.snippet || null,
                 fromAddress: extractEmailAddress(p.m.from) || p.m.from || null,
@@ -116,8 +120,9 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
 
     cursor = nextPageToken || undefined;
     if (!nextPageToken) {
-      done = true;
-      break;
+      phase = NEXT_PHASE[phase];
+      cursor = undefined;
+      if (phase === "DONE") done = true;
     }
 
     // Persist progress after every page, not just at the end — if the
@@ -125,13 +130,14 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
     // last completed page instead of from scratch.
     await prisma.gmailConnection.update({
       where: { userId },
-      data: { historySyncCursor: cursor, historySyncProcessed: processed, historySyncMatched: matchedTotal },
+      data: { historySyncPhase: phase, historySyncCursor: cursor, historySyncProcessed: processed, historySyncMatched: matchedTotal },
     });
   }
 
   await prisma.gmailConnection.update({
     where: { userId },
     data: {
+      historySyncPhase: phase,
       historySyncCursor: done ? null : cursor,
       historySyncDone: done,
       historySyncProcessed: processed,
@@ -139,13 +145,14 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
     },
   });
 
-  return { done, processed, matched: matchedTotal };
+  return { done, phase, processed, matched: matchedTotal };
 }
 
 export async function restartGmailHistorySync(userId: string) {
   await prisma.gmailConnection.update({
     where: { userId },
     data: {
+      historySyncPhase: "SENT",
       historySyncCursor: null,
       historySyncDone: false,
       historySyncProcessed: 0,

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { History, Loader2 } from "lucide-react";
 
-type Progress = { running: boolean; done: boolean; processed: number; matched: number };
+type Progress = { running: boolean; done: boolean; phase?: string; processed: number; matched: number };
 
 export function HistorySyncCard({ connected, email }: { connected: boolean; email: string | null }) {
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -38,7 +38,7 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
         setError(d?.error || "Sync failed.");
         break;
       }
-      setProgress({ running: !d.done, done: d.done, processed: d.processed, matched: d.matched });
+      setProgress({ running: !d.done, done: d.done, phase: d.phase, processed: d.processed, matched: d.matched });
       if (d.done) break;
     }
     setSyncing(false);
@@ -51,19 +51,19 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--hq-text)]">
-            <History className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> Full Sent-mail history sync
+            <History className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> Full mailbox history sync
           </p>
           <p className="mt-1 text-xs text-[var(--hq-text-muted)]">
-            Scans every sent email in {email}&apos;s mailbox — not just recent ones — and attaches it to
-            any lead on the To line, cc&apos;d, or in the From header, so their whole history shows up on the
-            contact page.
+            Scans every email {email} has ever sent <em>and</em> received — not just recent ones —
+            and attaches each to any lead on the To line, cc&apos;d, or in the From header, so their
+            whole history shows up on the contact page regardless of which direction the email went.
           </p>
           {progress && (
             <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
               {progress.done
-                ? `Done — scanned ${progress.processed} sent emails, linked ${progress.matched} to leads.`
+                ? `Done — scanned ${progress.processed} emails (sent + received), linked ${progress.matched} to leads.`
                 : progress.processed > 0
-                  ? `In progress — scanned ${progress.processed} so far, ${progress.matched} linked to leads.`
+                  ? `In progress (scanning ${progress.phase === "INBOX" ? "inbox" : "sent mail"}) — ${progress.processed} scanned so far, ${progress.matched} linked to leads.`
                   : null}
             </p>
           )}

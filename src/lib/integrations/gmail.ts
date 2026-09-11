@@ -336,12 +336,14 @@ export type GmailSentMessage = {
   snippet: string;
 };
 
-// One page of the SENT label, with To/Cc headers (unlike listGmailInbox,
-// which only needs From for its purpose) — this is what the full-history
-// backfill walks page by page via pageToken to cover a mailbox of any
-// size without one giant request.
-export async function listGmailSentPage(
+// One page of the given label(s), with To/Cc headers (unlike
+// listGmailInbox, which only needs From for its purpose) — this is what
+// the full-history backfill walks page by page via pageToken, for
+// either SENT or INBOX, to cover a mailbox of any size without one
+// giant request.
+export async function listGmailMessagesPage(
   userId: string,
+  labelIds: string[],
   pageToken: string | undefined,
   maxResults = 50
 ): Promise<{ messages: GmailSentMessage[]; nextPageToken: string | null }> {
@@ -351,7 +353,7 @@ export async function listGmailSentPage(
   const list = await gmail.users.messages.list({
     userId: "me",
     maxResults,
-    labelIds: ["SENT"],
+    labelIds,
     pageToken,
   });
   const refs = list.data.messages || [];

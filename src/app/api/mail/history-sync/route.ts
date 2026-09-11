@@ -19,13 +19,14 @@ export async function GET() {
     email: conn.email,
     running: !!conn.historySyncStartedAt && !conn.historySyncDone,
     done: conn.historySyncDone,
+    phase: conn.historySyncPhase,
     processed: conn.historySyncProcessed,
     matched: conn.historySyncMatched,
     startedAt: conn.historySyncStartedAt,
   });
 }
 
-// Runs one bounded chunk of the Sent-mail backfill and returns straight
+// Runs one bounded chunk of the Sent+Inbox backfill and returns straight
 // away with progress so far — the client calls this in a loop until
 // `done` comes back true. Pass { restart: true } to wipe prior progress
 // and start over from the beginning of Sent mail.
