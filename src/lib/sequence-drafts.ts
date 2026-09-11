@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
 import { daysToMs, fillTemplate, stepTemplateFor } from "@/lib/sequences";
 import { researchStepPersonalization } from "@/lib/sequence-research";
-import { resolveOutboundEmail } from "@/lib/crm-contact";
+import { resolveOutboundEmail, advanceLeadStageForSentStep } from "@/lib/crm-contact";
 
 // The confirmation-gated counterpart to runDueSequenceSteps (see
 // sequences.ts) — for any ACTIVE enrollment on a requiresConfirmation
@@ -234,6 +234,8 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
       },
     }),
   ]);
+
+  await advanceLeadStageForSentStep(enrollment.contactId, draft.stepOrder);
 }
 
 // Rejects a pending draft without sending it. "skip" moves the

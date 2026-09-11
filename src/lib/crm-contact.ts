@@ -92,3 +92,44 @@ export async function findOrCreateContactByEmail(email: string, createdById: str
 export function resolveOutboundEmail(contact: { email: string | null }): string | null {
   return contact.email || null;
 }
+
+// Which pipeline stage each sequence step (0-indexed) represents once it
+// actually sends — email 1 lands the lead on "Contacted Once", email 2 on
+// "1st Follow Up", and so on. A sequence with more steps than this list
+// just keeps every step past the third parked on "Last Follow Up" rather
+// than needing a stage per extra step.
+const STAGE_BY_STEP_ORDER = ["CONTACTED_ONCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_LAST"] as const;
+
+// Only these statuses are "still in automated outreach" — once a human
+// has manually moved a lead to a meeting, negotiation, won, or lost, a
+// sequence step sending later should never drag it back into a follow-up
+// column. NEW_LEAD and STALE both count as "hasn't started yet" for this
+// purpose, so the very first send always advances them.
+const AUTO_PROGRESSION_STATUSES = ["NEW_LEAD", "STALE", ...STAGE_BY_STEP_ORDER] as const;
+
+function stageIndex(status: string): number {
+  if (status === "NEW_LEAD" || status === "STALE") return 0;
+  const i = STAGE_BY_STEP_ORDER.indexOf(status as (typeof STAGE_BY_STEP_ORDER)[number]);
+  return i === -1 ? -1 : i + 1;
+}
+
+// Call this right after a sequence step's email actually sends (not when
+// it's merely drafted or scheduled) — see runDueSequenceSteps in
+// sequences.ts and sendConfirmedDraft in sequence-drafts.ts. Moves the
+// lead's CRM status forward to match how many of its emails have gone
+// out so far, and simply does nothing once a step fails to send (never
+// runs, gets skipped, or the sequence is paused/canceled) — so the
+// lead's classification naturally freezes at whichever email last went
+// out, exactly reflecting what actually happened rather than what was
+// scheduled to happen.
+export async function advanceLeadStageForSentStep(contactId: string, stepOrder: number) {
+  const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { status: true } });
+  if (!contact || !AUTO_PROGRESSION_STATUSES.includes(contact.status as (typeof AUTO_PROGRESSION_STATUSES)[number])) {
+    return; // a human already moved this lead past automated outreach — leave it alone
+  }
+
+  const targetStatus = STAGE_BY_STEP_ORDER[Math.min(stepOrder, STAGE_BY_STEP_ORDER.length - 1)];
+  if (stageIndex(targetStatus) <= stageIndex(contact.status)) return; // never move backward
+
+  await prisma.contact.update({ where: { id: contactId }, data: { status: targetStatus } });
+}

@@ -414,7 +414,10 @@ export function Timeline({
         </div>
       )}
 
-      <div className="mt-6 space-y-3">
+      <p className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--hq-text-muted)]">
+        Communication Log
+      </p>
+      <div className="mt-3 space-y-3">
         {interactions.length === 0 && (
           <p className="text-sm text-[var(--hq-text-muted)]">
             No interactions logged yet. This is the shared thread everyone on the team sees.
@@ -423,9 +426,18 @@ export function Timeline({
         {interactions.map((i) => {
           const Icon = TYPE_ICON[i.type];
           const DirIcon = i.direction === "INBOUND" ? ArrowDownLeft : ArrowUpRight;
+          // Every row rendered here is already sent/logged — never a draft
+          // in progress — so an EMAIL entry's icon should read as neutral,
+          // not the accent color. Accent stays reserved for signaling an
+          // email that's still being composed/drafted, which isn't a state
+          // this list currently has a row for.
+          const iconClass =
+            i.type === "EMAIL"
+              ? "bg-[var(--hq-canvas)] text-[var(--hq-text-muted)]"
+              : "bg-[var(--hq-accent-soft)] text-[var(--hq-accent)]";
           return (
             <div key={i.id} className="flex gap-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--hq-accent-soft)] text-[var(--hq-accent)]">
+              <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">

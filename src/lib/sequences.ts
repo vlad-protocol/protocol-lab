@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
-import { resolveOutboundEmail } from "@/lib/crm-contact";
+import { resolveOutboundEmail, advanceLeadStageForSentStep } from "@/lib/crm-contact";
 
 function firstNameOf(contactName: string): string {
   return contactName.trim().split(/\s+/)[0] || contactName;
@@ -298,6 +298,8 @@ export async function runDueSequenceSteps() {
           sequenceStepOrder: stepOrder,
         },
       });
+
+      await advanceLeadStageForSentStep(enrollment.contactId, stepOrder);
 
       const nextIndex = enrollment.currentStep + 1;
       const nextStep = enrollment.sequence.steps[nextIndex];
