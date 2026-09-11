@@ -59,7 +59,13 @@ export default async function SequencesPage() {
         <a href="/dashboard/automation-confirmations" className="text-[var(--hq-accent)] hover:underline">
           Automation Confirmations
         </a>{" "}
-        page.
+        page. There's no signature field on a step below — every email each of you sends (sequence
+        steps included) gets your own signature appended automatically, based on whoever's Gmail
+        it sends from. Set yours once in{" "}
+        <a href="/dashboard/settings" className="text-[var(--hq-accent)] hover:underline">
+          Settings → Email signature
+        </a>
+        .
       </p>
 
       <SequencesClient
