@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ChevronDown, ChevronUp, Mail, Sparkles } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Mail, Sparkles, Check } from "lucide-react";
 
 type Step = {
   id?: string;
@@ -43,9 +43,11 @@ export function SequencesClient({
   const [newRequiresConfirmation, setNewRequiresConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(hasOldDefaultSequence);
   const [upgrading, setUpgrading] = useState(false);
   const [upgradeResult, setUpgradeResult] = useState<string | null>(null);
+  const [createdMessage, setCreatedMessage] = useState<string | null>(null);
 
   // One-time upgrade for accounts whose default sequence was seeded under
   // the old name before the Sponsor Cold Outreach templates existed — see
@@ -97,6 +99,10 @@ export function SequencesClient({
       ...s,
       { ...d.sequence, activeCount: 0, createdBy: null, steps: d.sequence.steps },
     ]);
+    // The form collapsing was the only feedback before — easy to miss, so
+    // say plainly it saved and where to find it.
+    setCreatedMessage(`"${d.sequence.name}" was created and saved — it's in the list below.`);
+    setTimeout(() => setCreatedMessage(null), 5000);
     router.refresh();
   }
 
@@ -121,6 +127,7 @@ export function SequencesClient({
   async function saveSteps(id: string, steps: Step[]) {
     setBusy(true);
     setError(null);
+    setSavedId(null);
     const res = await fetch(`/api/sequences/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -133,6 +140,11 @@ export function SequencesClient({
       return;
     }
     setSequences((s) => s.map((x) => (x.id === id ? { ...x, steps: d.sequence.steps } : x)));
+    // Explicit, visible confirmation that the save actually went through —
+    // without this, "Save steps" briefly disabling and re-enabling itself
+    // looked identical whether the request succeeded or silently failed.
+    setSavedId(id);
+    setTimeout(() => setSavedId((cur) => (cur === id ? null : cur)), 3000);
     router.refresh();
   }
 
@@ -144,6 +156,11 @@ export function SequencesClient({
   return (
     <div className="mt-6">
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {createdMessage && (
+        <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+          <Check className="h-4 w-4" /> {createdMessage}
+        </p>
+      )}
 
       {showUpgrade && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--hq-accent)]/30 bg-[var(--hq-accent)]/5 p-4">
@@ -262,15 +279,25 @@ export function SequencesClient({
               <div className="mt-4 border-t border-[var(--hq-card-border)] pt-4">
                 <StepEditor
                   steps={seq.steps}
-                  onChange={(steps) => setSequences((s) => s.map((x) => (x.id === seq.id ? { ...x, steps } : x)))}
+                  onChange={(steps) => {
+                    setSequences((s) => s.map((x) => (x.id === seq.id ? { ...x, steps } : x)));
+                    if (savedId === seq.id) setSavedId(null); // editing again invalidates the last "Saved" confirmation
+                  }}
                 />
-                <button
-                  onClick={() => saveSteps(seq.id, seq.steps)}
-                  disabled={busy}
-                  className="mt-3 rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  Save steps
-                </button>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    onClick={() => saveSteps(seq.id, seq.steps)}
+                    disabled={busy}
+                    className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {busy ? "Saving…" : "Save steps"}
+                  </button>
+                  {savedId === seq.id && (
+                    <span className="flex items-center gap-1 text-sm font-medium text-emerald-600">
+                      <Check className="h-4 w-4" /> Saved — future emails for this sequence will use this wording.
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
