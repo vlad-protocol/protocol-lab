@@ -48,10 +48,13 @@ async function callClaudeWithSearch(system: string, userMessage: string): Promis
       max_tokens: 1400,
       system,
       messages: [{ role: "user", content: userMessage }],
-      // 1 search keeps this cheap ($10/1,000 searches, billed per use) and
-      // avoids paying to ingest 2-3 extra search-result pages as input
-      // tokens for what only needs to become a single sentence.
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
+      // Small local businesses (a neighborhood gym, say) often don't turn
+      // up on the first, most-obvious query — give the model a couple of
+      // extra tries (Instagram/Facebook/Google listing, name + neighborhood,
+      // etc.) before it gives up and returns an empty observation. Each
+      // search is still only $0.01, so a few retries barely move the cost
+      // needle compared to the model swap above.
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
     }),
   });
 
@@ -121,7 +124,9 @@ export async function researchStepPersonalization(opts: {
 
 Find one specific, true, checkable observation about ${brand} that fits this brief: ${angle}
 
-Use web search to find something real and current — a recent launch, event, campaign, sponsorship, social post, or something specific about the audience they reach. Do not invent anything. If you can't find anything solid and verifiable, say so honestly (return an empty observation) rather than guessing.
+Use web search to find something real and current — a recent launch, event, campaign, sponsorship, social post, or something specific about the audience they reach. Do not invent anything.
+
+This is often a small local business, so don't give up after one obvious query. If a plain name search comes back thin, try at least one more angle before concluding nothing is findable: the name plus "Montreal" or a neighborhood, their Instagram or Facebook handle, their Google Maps listing, or their class schedule/pricing page. A concrete detail from their own social presence or listing (follower count, class format, location, a recent post) counts as solid and verifiable — it doesn't need to be press coverage. Only return an empty observation, honestly, if a real search effort across a couple of angles truly turns up nothing usable.
 
 ${languageInstruction}
 
