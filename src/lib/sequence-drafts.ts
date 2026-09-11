@@ -16,7 +16,7 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
   const due = await prisma.sequenceEnrollment.findMany({
     where: { status: "ACTIVE", nextSendAt: { lte: new Date() }, sequence: { requiresConfirmation: true } },
     include: {
-      contact: { include: { people: { select: { email: true } } } },
+      contact: true,
       sequence: { include: { steps: { orderBy: { order: "asc" } } } },
     },
   });
@@ -118,7 +118,7 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
     include: {
       enrollment: {
         include: {
-          contact: { include: { people: { select: { email: true } } } },
+          contact: true,
           sequence: { include: { steps: { orderBy: { order: "asc" } } } },
         },
       },

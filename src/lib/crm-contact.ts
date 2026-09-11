@@ -80,15 +80,15 @@ export async function findOrCreateContactByEmail(email: string, createdById: str
 }
 
 // Which address to actually send a sequence step (or anything else
-// automated) to for this lead. A lead's own Contact.email is often blank
-// when it was added with only a person recorded via the People panel —
-// falling back to the first ContactPerson with an email means an
-// enrollment doesn't get silently canceled with "no email on file" just
-// because the address lives on the person instead of the lead itself.
-export function resolveOutboundEmail(contact: {
-  email: string | null;
-  people?: { email: string | null }[];
-}): string | null {
-  if (contact.email) return contact.email;
-  return contact.people?.find((p) => p.email)?.email || null;
+// automated) to for this lead — deliberately the lead's own primary
+// Contact.email ONLY, never a ContactPerson's. People-panel entries are
+// secondary contacts: they count toward matching inbound/outbound mail to
+// this lead (see the lookups above), and they show up on the timeline,
+// but they are never a send target. If a lead's real contact is one of
+// its people rather than the lead's own primary fields, promote that
+// person to primary from the People panel ("Make primary contact") — that
+// copies their name/email/phone up into the lead itself — rather than
+// this function silently reaching for a secondary person's address.
+export function resolveOutboundEmail(contact: { email: string | null }): string | null {
+  return contact.email || null;
 }

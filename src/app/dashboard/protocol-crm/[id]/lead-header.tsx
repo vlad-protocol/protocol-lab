@@ -140,6 +140,11 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--hq-text-muted)]">
+        {(lead.email || lead.phone) && (
+          <span className="rounded bg-[var(--hq-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--hq-accent)]">
+            Primary contact
+          </span>
+        )}
         {lead.email && (
           <span className="flex items-center gap-1">
             <Mail className="h-3.5 w-3.5" /> {lead.email}
@@ -149,6 +154,9 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
           <span className="flex items-center gap-1">
             <Phone className="h-3.5 w-3.5" /> {lead.phone}
           </span>
+        )}
+        {!lead.email && !lead.phone && (
+          <span className="text-amber-600">No primary contact email/phone set yet — automated sequences can't send until one is added below.</span>
         )}
       </div>
 

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Mail, Phone, Plus, Trash2, Users } from "lucide-react";
+import { Mail, Phone, Plus, Trash2, Users, Star } from "lucide-react";
 
 export type Person = {
   id: string;
@@ -73,6 +73,23 @@ function PersonRow({ contactId, person, onChanged }: { contactId: string; person
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(person);
   const [saving, setSaving] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+
+  // Swaps this secondary person into the lead's own primary contact fields
+  // (contactName/email/phone) — the only fields sequence emails actually
+  // send to. The lead's previous primary becomes a new secondary person,
+  // so nothing gets lost. See the makePrimary branch in the PATCH route.
+  async function makePrimary() {
+    if (!confirm(`Make ${person.name} the primary contact for this lead? Sequence emails will go to their address from now on.`)) return;
+    setPromoting(true);
+    await fetch(`/api/contacts/${contactId}/people/${person.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ makePrimary: true }),
+    });
+    setPromoting(false);
+    onChanged();
+  }
 
   async function save() {
     setSaving(true);
@@ -137,8 +154,17 @@ function PersonRow({ contactId, person, onChanged }: { contactId: string; person
             </span>
           )}
         </div>
+        <p className="mt-1 text-[10px] text-[var(--hq-text-muted)]">Secondary contact — not used for automated sequence emails.</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        <button
+          onClick={makePrimary}
+          disabled={promoting || !person.email}
+          title={person.email ? "Make this the lead's primary contact" : "Add an email first"}
+          className="flex items-center gap-1 text-xs text-[var(--hq-text-muted)] hover:text-[var(--hq-accent)] disabled:opacity-40"
+        >
+          <Star className="h-3.5 w-3.5" /> {promoting ? "Making primary…" : "Make primary"}
+        </button>
         <button onClick={() => setEditing(true)} className="text-xs text-[var(--hq-text-muted)] hover:text-[var(--hq-text)]">
           Edit
         </button>
@@ -154,7 +180,14 @@ function PersonRow({ contactId, person, onChanged }: { contactId: string; person
 // manager AND their finance contact, say. Every person's email is also
 // matched against the Gmail history backfill and live inbox sync (see
 // crm-contact.ts), so a message to/from any of them still shows up on
-// this lead's timeline below, not just the primary contact.
+// this lead's timeline below.
+//
+// But only ONE address is ever a send target for automated sequence
+// emails: the lead's own primary contactName/email/phone (shown in the
+// header and Details above) — never a person listed here. These are
+// secondary contacts: useful for matching conversation history, never for
+// sending. Use "Make primary" on a person to swap them into that primary
+// role instead (their old primary becomes a new secondary automatically).
 export function PeoplePanel({ contactId, people }: { contactId: string; people: Person[] }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -168,7 +201,7 @@ export function PeoplePanel({ contactId, people }: { contactId: string; people: 
     <div className="mt-4 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--hq-text)]">
-          <Users className="h-3.5 w-3.5" /> People ({people.length})
+          <Users className="h-3.5 w-3.5" /> Secondary contacts ({people.length})
         </p>
         {!adding && (
           <button
@@ -179,10 +212,14 @@ export function PeoplePanel({ contactId, people }: { contactId: string; people: 
           </button>
         )}
       </div>
+      <p className="mt-0.5 text-[11px] text-[var(--hq-text-muted)]">
+        Additional people at this company. Their messages still show up on the timeline below, but automated
+        sequence emails only ever go to the lead's primary contact info above.
+      </p>
 
       {people.length === 0 && !adding && (
         <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
-          Just the primary contact so far. Add anyone else at this company whose emails should also count toward this lead.
+          None yet. Add anyone else at this company whose conversations should also count toward this lead.
         </p>
       )}
 

@@ -21,6 +21,49 @@ export async function PATCH(
   }
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // Promotes this secondary person to be the lead's primary contact — the
+  // one automated sequence emails actually send to (see resolveOutboundEmail
+  // in crm-contact.ts, which deliberately never falls back to a secondary
+  // person). Swaps rather than just overwrites: whatever the lead's current
+  // primary name/email/phone was becomes a new secondary person record, so
+  // promoting someone doesn't quietly lose the previous primary contact's
+  // info.
+  if (body.makePrimary) {
+    const contact = await prisma.contact.findUnique({ where: { id } });
+    if (!contact) return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+
+    const shouldPreservePrevious =
+      contact.contactName && contact.contactName !== existing.name && (contact.email || contact.phone) && contact.email !== existing.email;
+
+    await prisma.$transaction([
+      ...(shouldPreservePrevious
+        ? [
+            prisma.contactPerson.create({
+              data: {
+                contactId: id,
+                name: contact.contactName,
+                email: contact.email,
+                phone: contact.phone,
+              },
+            }),
+          ]
+        : []),
+      prisma.contact.update({
+        where: { id },
+        data: {
+          contactName: existing.name,
+          email: existing.email,
+          phone: existing.phone,
+          title: existing.title,
+        },
+      }),
+      prisma.contactPerson.delete({ where: { id: personId } }),
+    ]);
+
+    return NextResponse.json({ ok: true });
+  }
+
   const data: Record<string, unknown> = {};
   for (const key of STRING_FIELDS) {
     if (key in body) data[key] = body[key] === "" ? null : (body[key] as string);

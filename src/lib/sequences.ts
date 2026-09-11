@@ -199,18 +199,16 @@ export async function enrollContact(contactId: string, sequenceId: string) {
   if (!firstStep) throw new Error("This sequence has no steps yet — add at least one before enrolling anyone.");
 
   // Fail loudly here instead of creating an enrollment that the send/draft
-  // tick will just cancel a moment later with no visible explanation —
-  // this is exactly what silently produced a pile of instantly-CANCELED
-  // enrollments for a lead whose email lived on a People-panel person
-  // rather than the lead's own email field (now checked too, see
-  // resolveOutboundEmail).
-  const contact = await prisma.contact.findUnique({
-    where: { id: contactId },
-    include: { people: { select: { email: true } } },
-  });
+  // tick will just cancel a moment later with no visible explanation.
+  // Deliberately checks the lead's own primary email only — a secondary
+  // person's email (People panel) never counts as a send target, even if
+  // one is on file; see resolveOutboundEmail in crm-contact.ts. Promote a
+  // person to primary from that panel if that's actually who should get
+  // these emails.
+  const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { email: true } });
   if (!contact) throw new Error("Lead not found.");
   if (!resolveOutboundEmail(contact)) {
-    throw new Error("This lead has no email on file — add one (on the lead or a person) before enrolling.");
+    throw new Error("This lead has no primary contact email on file — set one in Details before enrolling.");
   }
 
   return prisma.sequenceEnrollment.create({
@@ -238,7 +236,7 @@ export async function runDueSequenceSteps() {
   const due = await prisma.sequenceEnrollment.findMany({
     where: { status: "ACTIVE", nextSendAt: { lte: new Date() }, sequence: { requiresConfirmation: false } },
     include: {
-      contact: { include: { people: { select: { email: true } } } },
+      contact: true,
       sequence: { include: { steps: { orderBy: { order: "asc" } } } },
     },
   });
