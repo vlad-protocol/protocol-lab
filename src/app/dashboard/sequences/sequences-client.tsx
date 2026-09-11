@@ -4,7 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, ChevronDown, ChevronUp, Mail, Sparkles } from "lucide-react";
 
-type Step = { id?: string; delayDays: number; subject: string; body: string; researchAngle?: string | null };
+type Step = {
+  id?: string;
+  delayDays: number;
+  subject: string;
+  body: string;
+  researchAngle?: string | null;
+  subjectFr?: string | null;
+  bodyFr?: string | null;
+};
 type Sequence = {
   id: string;
   name: string;
@@ -16,7 +24,7 @@ type Sequence = {
   steps: Step[];
 };
 
-const EMPTY_STEP: Step = { delayDays: 0, subject: "", body: "", researchAngle: "" };
+const EMPTY_STEP: Step = { delayDays: 0, subject: "", body: "", researchAngle: "", subjectFr: "", bodyFr: "" };
 
 export function SequencesClient({
   initialSequences,
@@ -272,6 +280,8 @@ export function SequencesClient({
 }
 
 function StepEditor({ steps, onChange }: { steps: Step[]; onChange: (steps: Step[]) => void }) {
+  const [showFr, setShowFr] = useState<Record<number, boolean>>({});
+
   function update(i: number, patch: Partial<Step>) {
     onChange(steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
   }
@@ -330,6 +340,32 @@ function StepEditor({ steps, onChange }: { steps: Step[]; onChange: (steps: Step
             value={step.researchAngle || ""}
             onChange={(e) => update(i, { researchAngle: e.target.value })}
           />
+
+          <button
+            type="button"
+            onClick={() => setShowFr((s) => ({ ...s, [i]: !s[i] }))}
+            className="mt-2 text-xs font-medium text-[var(--hq-accent)] hover:underline"
+          >
+            {showFr[i] ? "Hide" : step.subjectFr || step.bodyFr ? "Edit" : "Add"} French version
+          </button>
+
+          {showFr[i] && (
+            <div className="mt-2 space-y-2 rounded-md border border-[var(--hq-card-border)] bg-[var(--hq-canvas)] p-2">
+              <input
+                placeholder="Sujet (français) — laisser vide pour utiliser la version anglaise"
+                className="w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1.5 text-sm"
+                value={step.subjectFr || ""}
+                onChange={(e) => update(i, { subjectFr: e.target.value })}
+              />
+              <textarea
+                placeholder="Corps du courriel (français) — laisser vide pour utiliser la version anglaise. Mêmes jetons : {{contactName}}, {{firstName}}, {{companyName}}, {{brand}}, {{repName}}, {{bookingLink}}, {{observation}}, {{hook}}"
+                rows={3}
+                className="w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1.5 text-sm"
+                value={step.bodyFr || ""}
+                onChange={(e) => update(i, { bodyFr: e.target.value })}
+              />
+            </div>
+          )}
         </div>
       ))}
       <button

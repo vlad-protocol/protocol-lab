@@ -109,6 +109,11 @@ enum ContactType {
   VENUE
 }
 
+enum ContactLanguage {
+  EN
+  FR
+}
+
 // Pipeline stages, in board-column order (see the Kanban board view).
 enum LeadStatus {
   NEW_LEAD
@@ -140,6 +145,10 @@ model Contact {
   phone       String?
   website     String?
   industry    String?
+  // Which language to draft/send this contact's sequence emails in — see
+  // EmailSequenceStep.subjectFr/bodyFr and sequence-research.ts. Manually
+  // set (there's no reliable way to auto-detect it); defaults to English.
+  language    ContactLanguage @default(EN)
 
   type     ContactType   @default(CLIENT)
   status   LeadStatus    @default(NEW_LEAD)
@@ -348,6 +357,14 @@ model EmailSequenceStep {
   delayDays     Int // days after the previous step (or after enrollment, for step 0)
   subject       String
   body          String // supports {{contactName}}, {{firstName}}, {{companyName}}, {{brand}}, {{repName}}, {{observation}}, {{hook}}, {{bookingLink}} merge fields
+  // French versions of subject/body, used instead of the fields above
+  // whenever the enrolled contact's `language` is FR (see Contact.language
+  // and src/lib/sequences.ts / sequence-drafts.ts). Null means this step
+  // has no French version yet — the English subject/body is sent instead.
+  // researchAngle stays a single English instruction either way; only the
+  // requested OUTPUT language changes (see sequence-research.ts).
+  subjectFr     String?
+  bodyFr        String?
 
   @@index([sequenceId, order])
 }

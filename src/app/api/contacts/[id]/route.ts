@@ -88,6 +88,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // contactName is required on the model — never let an edit blank it out.
   if ("contactName" in data && !data.contactName) delete data.contactName;
 
+  // language is required (defaults to EN) — only accept the two real
+  // values, so a blank/unexpected value from the client is a no-op
+  // rather than a Prisma error.
+  if ("language" in body && (body.language === "EN" || body.language === "FR")) {
+    data.language = body.language;
+  }
+
   const contact = await prisma.contact.update({
     where: { id },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

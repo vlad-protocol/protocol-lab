@@ -68,6 +68,7 @@ export default async function LeadDetailPage({
         details={{
           id: lead.id,
           industry: lead.industry,
+          language: lead.language,
           website: lead.website,
           source: lead.source,
           followUpOwner: lead.followUpOwner,

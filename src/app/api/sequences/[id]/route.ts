@@ -16,7 +16,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     description?: string | null;
     enabled?: boolean;
     requiresConfirmation?: boolean;
-    steps?: { delayDays: number; subject: string; body: string; researchAngle?: string | null }[];
+    steps?: {
+      delayDays: number;
+      subject: string;
+      body: string;
+      researchAngle?: string | null;
+      subjectFr?: string | null;
+      bodyFr?: string | null;
+    }[];
   };
 
   const data: Record<string, unknown> = {};
@@ -41,6 +48,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           subject: s.subject,
           body: s.body,
           researchAngle: s.researchAngle?.trim() || null,
+          subjectFr: s.subjectFr?.trim() || null,
+          bodyFr: s.bodyFr?.trim() || null,
         })),
       }),
     ]);

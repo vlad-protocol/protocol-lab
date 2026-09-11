@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
-import { daysToMs, fillTemplate } from "@/lib/sequences";
+import { daysToMs, fillTemplate, stepTemplateFor } from "@/lib/sequences";
 import { researchStepPersonalization } from "@/lib/sequence-research";
 
 // The confirmation-gated counterpart to runDueSequenceSteps (see
@@ -65,6 +65,7 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
         const result = await researchStepPersonalization({
           brand,
           angle: step.researchAngle,
+          language: enrollment.contact.language,
           context: {
             website: enrollment.contact.website,
             industry: enrollment.contact.industry,
@@ -84,8 +85,9 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
       }
 
       const vars = { observation, hook, bookingLink: `${baseUrl}/book` };
-      const subject = fillTemplate(step.subject, enrollment.contact, repUser?.name || "", vars);
-      const body = fillTemplate(step.body, enrollment.contact, repUser?.name || "", vars);
+      const template = stepTemplateFor(step, enrollment.contact.language);
+      const subject = fillTemplate(template.subject, enrollment.contact, repUser?.name || "", vars);
+      const body = fillTemplate(template.body, enrollment.contact, repUser?.name || "", vars);
 
       await prisma.sequenceStepDraft.create({
         data: { enrollmentId: enrollment.id, stepOrder, subject, body, researchNotes },

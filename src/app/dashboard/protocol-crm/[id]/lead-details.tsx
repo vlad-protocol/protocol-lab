@@ -6,6 +6,7 @@ import { useState } from "react";
 type Details = {
   id: string;
   industry: string | null;
+  language: "EN" | "FR";
   website: string | null;
   source: string | null;
   followUpOwner: string | null;
@@ -47,12 +48,33 @@ export function LeadDetails({ details }: { details: Details }) {
     router.refresh();
   }
 
+  // Select fields commit immediately on change rather than on blur.
+  async function commitLanguage(language: "EN" | "FR") {
+    setDraft({ ...draft, language });
+    await fetch(`/api/contacts/${details.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language }),
+    });
+    router.refresh();
+  }
+
   return (
     <div className="mt-4 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
       <p className="text-sm font-semibold text-[var(--hq-text)]">Details</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Industry / category">
           <input className={inputCls} value={draft.industry || ""} onChange={(e) => setDraft({ ...draft, industry: e.target.value })} onBlur={() => commit("industry")} />
+        </Field>
+        <Field label="Preferred language">
+          <select
+            className={inputCls}
+            value={draft.language}
+            onChange={(e) => commitLanguage(e.target.value as "EN" | "FR")}
+          >
+            <option value="EN">English</option>
+            <option value="FR">Français</option>
+          </select>
         </Field>
         <Field label="Website / LinkedIn">
           <input className={inputCls} value={draft.website || ""} onChange={(e) => setDraft({ ...draft, website: e.target.value })} onBlur={() => commit("website")} />

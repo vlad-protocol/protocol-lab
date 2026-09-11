@@ -32,6 +32,21 @@ export function daysToMs(days: number) {
   return days * 24 * 60 * 60 * 1000;
 }
 
+// Picks which language variant of a step's subject/body to actually use,
+// based on the contact's Preferred language (see Contact.language). Falls
+// back to the English subject/body whenever a French version hasn't been
+// filled in for that step, so a partially-translated sequence never sends
+// something blank.
+export function stepTemplateFor(
+  step: { subject: string; body: string; subjectFr?: string | null; bodyFr?: string | null },
+  contactLanguage: "EN" | "FR"
+) {
+  if (contactLanguage === "FR" && step.subjectFr && step.bodyFr) {
+    return { subject: step.subjectFr, body: step.bodyFr };
+  }
+  return { subject: step.subject, body: step.body };
+}
+
 // Shared template for the 3-touch cold-outreach sequence — hook, value-add,
 // breakup — for Protocol sponsorship leads. Used both to seed a brand-new
 // account (getOrSeedDefaultSequence, below) and by the one-time admin
@@ -42,7 +57,7 @@ export function daysToMs(days: number) {
 export const DEFAULT_SEQUENCE_TEMPLATE = {
   name: "Sponsor Cold Outreach",
   description:
-    "3-touch cold email sequence for Protocol sponsorship leads: hook, value-add, breakup. Every step's personalized observation is researched and drafted automatically, then waits for your confirmation in Automation Confirmations before it sends.",
+    "3-touch cold email sequence for Protocol sponsorship leads: hook, value-add, breakup. Every step's personalized observation is researched and drafted automatically, then waits for your confirmation in Automation Confirmations before it sends. Each contact's Preferred language (English/French, set on their lead page) picks which version actually sends.",
   steps: [
     {
       order: 0,
@@ -54,14 +69,33 @@ export const DEFAULT_SEQUENCE_TEMPLATE = {
 
 {{observation}}
 
-Quick intro: we run Protocol — AFTR:HOURS, a sober rave built around a workout. Real sweat first, then a DJ takes over. It's become Montreal's spot for the healthiest people in the nightlife scene, and the most fun people in the fitness scene.
+Quick intro: we run Protocol, a Montreal fitness and nightlife brand. Our flagship event, AFTR:HOURS, pairs a real workout with a DJ set afterward, alcohol-free. We've sold out all three AFTR:HOURS events to date, drawn 500+ attendees at each of our free run/bike nights, and built an engaged audience of 6,000 on Instagram plus 700+ on our email/SMS list.
 
-{{brand}} would be in front of exactly that room. We've got sponsorship tiers from $500 to $2,500+, plus in-kind trade options.
+{{brand}} would be in front of exactly that audience — people who train hard and go out hard, in the same night.
 
-Got 15 minutes this week to see if there's a fit?
+Sponsorship runs from $500 to $2,500+ and can include on-site sampling or activation, a feed or story post to our audience, and placement in our email/SMS send. I can send over the full one-pager if useful.
 
+Would a quick call this week make sense, or would it be easier if I just sent the numbers first?
+
+Best,
 {{repName}}
-Protocol | protocolevnts@gmail.com | @byprotocol | protocolevent.com`,
+Protocol | hello@protocolevent.com | @byprotocol | protocolevent.com`,
+      subjectFr: "{{hook}} + Protocol x {{brand}}",
+      bodyFr: `Bonjour {{firstName}},
+
+{{observation}}
+
+En bref : nous dirigeons Protocol, une marque montréalaise à la croisée du fitness et de la vie nocturne. Notre événement phare, AFTR:HOURS, combine un vrai entraînement suivi d'un DJ, sans alcool. Nos trois éditions d'AFTR:HOURS ont toutes affiché complet, nos soirées course/vélo gratuites ont attiré plus de 500 personnes à chaque fois, et nous avons bâti une communauté engagée de 6 000 abonnés sur Instagram ainsi que plus de 700 contacts sur notre liste courriel/SMS.
+
+{{brand}} se retrouverait exactement devant ce public — des gens qui s'entraînent fort et qui sortent fort, la même soirée.
+
+Les commandites vont de 500 $ à 2 500 $ et plus, et peuvent inclure une activation ou distribution d'échantillons sur place, une publication ou story sur notre compte, ainsi qu'une présence dans notre envoi courriel/SMS. Je peux vous faire parvenir la fiche complète si utile.
+
+Est-ce qu'un court appel cette semaine vous conviendrait, ou préférez-vous que je vous envoie d'abord les chiffres ?
+
+Cordialement,
+{{repName}}
+Protocol | hello@protocolevent.com | @byprotocol | protocolevent.com`,
     },
     {
       order: 1,
@@ -71,10 +105,24 @@ Protocol | protocolevnts@gmail.com | @byprotocol | protocolevent.com`,
       subject: "Re: Protocol x {{brand}}",
       body: `Hi {{firstName}},
 
-Following up in case this got buried. One thing regardless of whether we ever talk: {{observation}}
+Following up in case this got buried.
 
-If it's useful to compare notes on what's working with this audience right now, happy to hop on a quick call — no pitch, just conversation. {{bookingLink}}
+One thing worth sharing regardless of whether we end up working together: {{observation}}
 
+If it would help to compare notes on reaching this audience, I'm happy to hop on a short call, no pitch involved. If a call isn't necessary, I can also just send our numbers over for you to review on your own time — {{bookingLink}}.
+
+Best,
+{{repName}}`,
+      subjectFr: "Re : Protocol x {{brand}}",
+      bodyFr: `Bonjour {{firstName}},
+
+Je fais un suivi au cas où ce message se serait perdu.
+
+Une chose que je tenais à partager, peu importe la suite : {{observation}}
+
+Si ça peut être utile de comparer nos notes sur la façon de rejoindre ce public, je serais content d'en discuter rapidement par appel, sans pitch. Si un appel n'est pas nécessaire, je peux aussi simplement vous envoyer nos chiffres à consulter à votre rythme — {{bookingLink}}.
+
+Cordialement,
 {{repName}}`,
     },
     {
@@ -84,11 +132,27 @@ If it's useful to compare notes on what's working with this audience right now, 
       subject: "Should I close the loop?",
       body: `Hi {{firstName}},
 
-Haven't heard back — figuring the timing's not right, and that's all good.
+Haven't heard back, so I'm guessing the timing isn't right, and that's completely fine.
 
-If reaching health-focused young professionals in Montreal becomes a priority down the line, I'm around. Rooting for {{brand}} either way.
+We're finalizing sponsors for our next event this week, so I'll assume it's a pass for now unless I hear otherwise.
 
-{{repName}}`,
+If reaching a fitness-and-nightlife audience in Montreal becomes a priority down the line, I'm around. Rooting for {{brand}} either way.
+
+Best,
+{{repName}}
+Protocol`,
+      subjectFr: "Dois-je fermer la boucle ?",
+      bodyFr: `Bonjour {{firstName}},
+
+Je n'ai pas eu de nouvelles, alors je présume que le moment n'est pas idéal, et c'est tout à fait correct.
+
+Nous finalisons nos commandites pour le prochain événement cette semaine, donc je vais considérer que c'est un non pour l'instant, sauf avis contraire de votre part.
+
+Si rejoindre un public fitness et vie nocturne à Montréal devient une priorité plus tard, je reste disponible. Bonne continuité à {{brand}}.
+
+Cordialement,
+{{repName}}
+Protocol`,
     },
   ],
 };
@@ -200,8 +264,9 @@ export async function runDueSequenceSteps() {
         continue;
       }
 
-      const subject = fillTemplate(step.subject, enrollment.contact, repUser?.name || "");
-      const body = fillTemplate(step.body, enrollment.contact, repUser?.name || "");
+      const template = stepTemplateFor(step, enrollment.contact.language);
+      const subject = fillTemplate(template.subject, enrollment.contact, repUser?.name || "");
+      const body = fillTemplate(template.body, enrollment.contact, repUser?.name || "");
       const externalId = await sendGmail(enrollment.sequence.createdById, enrollment.contact.email, subject, body);
 
       await prisma.interaction.create({

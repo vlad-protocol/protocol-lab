@@ -44,7 +44,10 @@ export default async function SequencesPage() {
         from the lead automatically pauses their enrollment. Use {"{{contactName}}"},{" "}
         {"{{firstName}}"}, {"{{companyName}}"}, {"{{brand}}"}, {"{{repName}}"},{" "}
         {"{{bookingLink}}"}, and {"{{observation}}"}/{"{{hook}}"} (only if this sequence
-        requires confirmation — see below) in the subject or body to personalize. A
+        requires confirmation — see below) in the subject or body to personalize. Each
+        step can also have a French version — whichever a contact's Preferred language
+        (set on their lead page) picks, falling back to English if no French version is
+        filled in. A
         sequence with "Require confirmation" on never sends a step on its own: each due
         step researches its observation (if it has one), drafts the merged email, and
         waits for you to review and confirm it on the{" "}
@@ -70,6 +73,8 @@ export default async function SequencesPage() {
             subject: st.subject,
             body: st.body,
             researchAngle: st.researchAngle,
+            subjectFr: st.subjectFr,
+            bodyFr: st.bodyFr,
           })),
         }))}
       />

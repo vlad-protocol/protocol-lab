@@ -87,6 +87,7 @@ function extractTrailingJson(text: string): Record<string, unknown> | null {
 export async function researchStepPersonalization(opts: {
   brand: string;
   angle: string;
+  language?: "EN" | "FR";
   context: {
     website?: string | null;
     industry?: string | null;
@@ -94,7 +95,7 @@ export async function researchStepPersonalization(opts: {
     notes?: string | null;
   };
 }): Promise<ObservationResult> {
-  const { brand, angle, context } = opts;
+  const { brand, angle, context, language = "EN" } = opts;
   const knownContext = [
     context.website ? `Website: ${context.website}` : null,
     context.industry ? `Industry: ${context.industry}` : null,
@@ -104,11 +105,18 @@ export async function researchStepPersonalization(opts: {
     .filter(Boolean)
     .join("\n");
 
+  const languageInstruction =
+    language === "FR"
+      ? "Write the \"observation\" and \"hook\" values in French — this goes straight into a French email to a French-speaking contact."
+      : "Write the \"observation\" and \"hook\" values in English.";
+
   const system = `You are researching a real brand/company called "${brand}" ahead of a cold sponsorship outreach email from Protocol, a Montreal sober rave built around a group workout (AFTR:HOURS — real exercise first, then a DJ set).
 
 Find one specific, true, checkable observation about ${brand} that fits this brief: ${angle}
 
 Use web search to find something real and current — a recent launch, event, campaign, sponsorship, social post, or something specific about the audience they reach. Do not invent anything. If you can't find anything solid and verifiable, say so honestly (return an empty observation) rather than guessing.
+
+${languageInstruction}
 
 What's already on file about them:
 ${knownContext || "(nothing else on file)"}

@@ -32,7 +32,14 @@ export async function POST(req: Request) {
     name?: string;
     description?: string;
     requiresConfirmation?: boolean;
-    steps?: { delayDays: number; subject: string; body: string; researchAngle?: string | null }[];
+    steps?: {
+      delayDays: number;
+      subject: string;
+      body: string;
+      researchAngle?: string | null;
+      subjectFr?: string | null;
+      bodyFr?: string | null;
+    }[];
   };
 
   if (!name || !steps?.length) {
@@ -52,6 +59,8 @@ export async function POST(req: Request) {
           subject: s.subject,
           body: s.body,
           researchAngle: s.researchAngle?.trim() || null,
+          subjectFr: s.subjectFr?.trim() || null,
+          bodyFr: s.bodyFr?.trim() || null,
         })),
       },
     },
