@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
+import { blocksToPlainText } from "@/lib/campaigns";
+import type { EmailBlock, EmailSettings } from "@/lib/email-blocks";
 
 export async function GET() {
   const session = await auth();
@@ -18,14 +20,14 @@ export async function GET() {
   // pulling every EmailSend row over the wire.
   const withCounts = await Promise.all(
     campaigns.map(async (c) => {
-      const grouped = await prisma.emailSend.groupBy({
-        by: ["status"],
-        where: { campaignId: c.id },
-        _count: true,
-      });
+      const [grouped, openedCount, clickedCount] = await Promise.all([
+        prisma.emailSend.groupBy({ by: ["status"], where: { campaignId: c.id }, _count: true }),
+        prisma.emailSend.count({ where: { campaignId: c.id, openedAt: { not: null } } }),
+        prisma.emailSend.count({ where: { campaignId: c.id, clickCount: { gt: 0 } } }),
+      ]);
       const counts: Record<string, number> = {};
       for (const g of grouped) counts[g.status] = g._count;
-      return { ...c, sendCounts: counts };
+      return { ...c, sendCounts: counts, openedCount, clickedCount };
     })
   );
 
@@ -39,23 +41,36 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { name, subject, body: html, audienceFilter, scheduledAt } = body as {
+  const {
+    name,
+    subject,
+    body: html,
+    blocks,
+    settings,
+    audienceFilter,
+    scheduledAt,
+  } = body as {
     name?: string;
     subject?: string;
     body?: string;
+    blocks?: EmailBlock[];
+    settings?: EmailSettings;
     audienceFilter?: unknown;
     scheduledAt?: string | null;
   };
 
-  if (!name || !subject || !html) {
-    return NextResponse.json({ error: "name, subject, and body are required." }, { status: 400 });
+  const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
+  if (!name || !subject || (!html && !hasBlocks)) {
+    return NextResponse.json({ error: "name, subject, and a body or visual builder content are required." }, { status: 400 });
   }
 
   const campaign = await prisma.emailCampaign.create({
     data: {
       name,
       subject,
-      body: html,
+      body: hasBlocks ? blocksToPlainText(blocks) : html || "",
+      blocks: hasBlocks ? (blocks as never) : undefined,
+      settings: hasBlocks && settings ? (settings as never) : undefined,
       audienceFilter: (audienceFilter as never) ?? undefined,
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
       createdById: session.user.id,

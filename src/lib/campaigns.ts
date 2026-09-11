@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { sendSesEmail } from "@/lib/integrations/ses";
 import { sendSms } from "@/lib/integrations/twilio";
 import type { Prisma } from "@prisma/client";
+import { renderEmailBlocksHtml, type EmailBlock, type EmailSettings, DEFAULT_EMAIL_SETTINGS } from "@/lib/email-blocks";
+import { wrapLinksForClickTracking, trackingPixelHtml } from "@/lib/email-tracking";
 
 // --- Shared audience filter -------------------------------------------
 //
@@ -97,6 +99,32 @@ function fillTemplate(text: string, contact: { contactName: string; companyName:
   return text
     .replaceAll("{{contactName}}", contact.contactName)
     .replaceAll("{{companyName}}", contact.companyName || "");
+}
+
+// Runs fillTemplate over every text-bearing field of a block array, so
+// {{contactName}}/{{companyName}} work inside the visual builder the same
+// way they do in the plain-text body.
+function fillBlocksTemplate(blocks: EmailBlock[], contact: { contactName: string; companyName: string | null }): EmailBlock[] {
+  return blocks.map((b) => {
+    if (b.type === "heading" || b.type === "text") return { ...b, text: fillTemplate(b.text, contact) };
+    if (b.type === "button") return { ...b, text: fillTemplate(b.text, contact) };
+    return b;
+  });
+}
+
+// A best-effort plain-text/HTML fallback derived from blocks — kept in
+// EmailCampaign.body (which is a required, non-nullable field) so
+// campaigns built with the visual editor still satisfy the schema and
+// still show something sane anywhere the raw body is read directly.
+export function blocksToPlainText(blocks: EmailBlock[]): string {
+  return blocks
+    .map((b) => {
+      if (b.type === "heading" || b.type === "text") return b.text;
+      if (b.type === "button") return `${b.text}: ${b.url}`;
+      return null;
+    })
+    .filter((v): v is string => !!v && v.trim().length > 0)
+    .join("\n\n");
 }
 
 // --- Unsubscribe tokens --------------------------------------------------
@@ -251,9 +279,18 @@ export async function runDueEmailCampaignSends(baseUrl: string) {
         companyName: send.contact?.companyName || null,
       };
       const subject = fillTemplate(send.campaign.subject, nameCtx);
-      const bodyHtml = fillTemplate(send.campaign.body, nameCtx) + unsubscribeFooterHtml(baseUrl, send.toEmail);
 
-      const messageId = await sendSesEmail(send.toEmail, subject, bodyHtml);
+      let html: string;
+      const blocks = send.campaign.blocks as unknown as EmailBlock[] | null;
+      if (blocks && blocks.length > 0) {
+        const settings = (send.campaign.settings as unknown as EmailSettings | null) || DEFAULT_EMAIL_SETTINGS;
+        html = renderEmailBlocksHtml(fillBlocksTemplate(blocks, nameCtx), settings);
+      } else {
+        html = fillTemplate(send.campaign.body, nameCtx);
+      }
+      html = wrapLinksForClickTracking(html, baseUrl, send.id) + unsubscribeFooterHtml(baseUrl, send.toEmail) + trackingPixelHtml(baseUrl, send.id);
+
+      const messageId = await sendSesEmail(send.toEmail, subject, html);
       await prisma.emailSend.update({
         where: { id: send.id },
         data: { status: "SENT", sentAt: new Date(), externalId: messageId },

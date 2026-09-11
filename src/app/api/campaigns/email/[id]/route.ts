@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
+import { blocksToPlainText } from "@/lib/campaigns";
+import type { EmailBlock, EmailSettings } from "@/lib/email-blocks";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -32,20 +35,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = await req.json();
-  const { name, subject, body: html, audienceFilter, scheduledAt } = body as {
+  const { name, subject, body: html, blocks, settings, audienceFilter, scheduledAt } = body as {
     name?: string;
     subject?: string;
     body?: string;
+    blocks?: EmailBlock[];
+    settings?: EmailSettings;
     audienceFilter?: unknown;
     scheduledAt?: string | null;
   };
+
+  const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
 
   const campaign = await prisma.emailCampaign.update({
     where: { id },
     data: {
       ...(name !== undefined ? { name } : {}),
       ...(subject !== undefined ? { subject } : {}),
-      ...(html !== undefined ? { body: html } : {}),
+      ...(hasBlocks
+        ? { body: blocksToPlainText(blocks), blocks: blocks as never, settings: (settings as never) ?? undefined }
+        : html !== undefined
+          ? { body: html, blocks: Prisma.JsonNull, settings: Prisma.JsonNull }
+          : {}),
       ...(audienceFilter !== undefined ? { audienceFilter: audienceFilter as never } : {}),
       ...(scheduledAt !== undefined ? { scheduledAt: scheduledAt ? new Date(scheduledAt) : null } : {}),
     },

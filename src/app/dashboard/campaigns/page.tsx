@@ -19,10 +19,14 @@ export default async function CampaignsPage() {
 
   const emailWithCounts = await Promise.all(
     emailCampaigns.map(async (c) => {
-      const grouped = await prisma.emailSend.groupBy({ by: ["status"], where: { campaignId: c.id }, _count: true });
+      const [grouped, openedCount, clickedCount] = await Promise.all([
+        prisma.emailSend.groupBy({ by: ["status"], where: { campaignId: c.id }, _count: true }),
+        prisma.emailSend.count({ where: { campaignId: c.id, openedAt: { not: null } } }),
+        prisma.emailSend.count({ where: { campaignId: c.id, clickCount: { gt: 0 } } }),
+      ]);
       const counts: Record<string, number> = {};
       for (const g of grouped) counts[g.status] = g._count;
-      return { ...c, sendCounts: counts };
+      return { ...c, sendCounts: counts, openedCount, clickedCount };
     })
   );
 

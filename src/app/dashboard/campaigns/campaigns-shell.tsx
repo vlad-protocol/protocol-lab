@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Send, Users, AlertTriangle, Mail, MessageSquare, Search } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, Send, Users, AlertTriangle, Mail, MessageSquare, Search, Eye, MousePointerClick, ChevronRight } from "lucide-react";
 import { TYPE_OPTIONS, STATUS_OPTIONS } from "../protocol-crm/types";
+import type { EmailBlock, EmailSettings } from "@/lib/email-blocks";
+import { BlockEditor } from "./block-editor";
 
 type ListMember = { id: string; name: string | null; email: string | null; phone: string | null };
 
@@ -20,6 +23,10 @@ type Campaign = {
   sendCounts: SendCounts;
   subject?: string; // email only
   body: string;
+  blocks?: EmailBlock[] | null; // email only
+  settings?: EmailSettings | null; // email only
+  openedCount?: number; // email only
+  clickedCount?: number; // email only
 };
 
 type Channel = "email" | "sms";
@@ -146,17 +153,25 @@ function CampaignCard({
   const counts = campaign.sendCounts || {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const filterSummary = describeFilter(campaign.audienceFilter);
+  const hasActivity = campaign.status !== "DRAFT";
 
   return (
     <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <Link
+          href={hasActivity ? `/dashboard/campaigns/${channel}/${campaign.id}` : "#"}
+          className={hasActivity ? "flex-1 cursor-pointer" : "flex-1"}
+          onClick={(e) => {
+            if (!hasActivity) e.preventDefault();
+          }}
+        >
           <p className="flex items-center gap-2 font-medium text-[var(--hq-text)]">
             {channel === "email" ? <Mail className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> : <MessageSquare className="h-3.5 w-3.5 text-[var(--hq-accent)]" />}
             {campaign.name}
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${STATUS_BADGE[campaign.status]}`}>
               {campaign.status}
             </span>
+            {hasActivity && <ChevronRight className="h-3.5 w-3.5 text-[var(--hq-text-muted)]" />}
           </p>
           {campaign.subject && <p className="mt-1 text-xs text-[var(--hq-text-muted)]">Subject: {campaign.subject}</p>}
           <p className="mt-1 text-xs text-[var(--hq-text-muted)]">Audience: {filterSummary}</p>
@@ -166,15 +181,30 @@ function CampaignCard({
             </p>
           )}
           {total > 0 && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs">
-              <Users className="h-3 w-3 text-[var(--hq-text-muted)]" />
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--hq-text-muted)]">
+              <Users className="h-3 w-3" />
               {["SENT", "PENDING", "FAILED", "BOUNCED", "COMPLAINED"]
                 .filter((s) => counts[s])
                 .map((s) => `${counts[s]} ${s.toLowerCase()}`)
                 .join(" · ")}
+              {channel === "email" && (campaign.openedCount || campaign.clickedCount) ? (
+                <>
+                  <span className="mx-1 text-[var(--hq-card-border)]">|</span>
+                  {campaign.openedCount ? (
+                    <span className="flex items-center gap-1">
+                      <Eye className="h-3 w-3" /> {campaign.openedCount} opened
+                    </span>
+                  ) : null}
+                  {campaign.clickedCount ? (
+                    <span className="flex items-center gap-1">
+                      <MousePointerClick className="h-3 w-3" /> {campaign.clickedCount} clicked
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
             </p>
           )}
-        </div>
+        </Link>
         <div className="flex shrink-0 items-center gap-2">
           {campaign.status === "DRAFT" && (
             <>
@@ -215,6 +245,9 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [bodyMode, setBodyMode] = useState<"plain" | "visual">("plain");
+  const [blocks, setBlocks] = useState<EmailBlock[]>([]);
+  const [settings, setSettings] = useState<EmailSettings>({ backgroundColor: "#f4f4f5", containerColor: "#ffffff", maxWidth: 600 });
   const [source, setSource] = useState<"crm" | "list">("crm");
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -261,8 +294,14 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
     if (d) setPreview(d);
   }
 
+  const useVisual = channel === "email" && bodyMode === "visual";
+
   async function create(e: React.FormEvent) {
     e.preventDefault();
+    if (useVisual && blocks.length === 0) {
+      setError("Add at least one block, or switch to Plain text.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const audienceFilter = buildFilter();
@@ -273,6 +312,7 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
         name,
         ...(channel === "email" ? { subject } : {}),
         body,
+        ...(useVisual ? { blocks, settings } : {}),
         audienceFilter,
         scheduledAt: scheduledAt || null,
       }),
@@ -305,18 +345,45 @@ function Composer({ channel, onCreated }: { channel: Channel; onCreated: (campai
           onChange={(e) => setSubject(e.target.value)}
         />
       )}
-      <textarea
-        required
-        placeholder={
-          channel === "email"
-            ? "Email body (HTML or plain text) — supports {{contactName}}, {{companyName}}. An unsubscribe link is added automatically."
-            : "Text message — supports {{contactName}}, {{companyName}}. \"Reply STOP to unsubscribe\" is added automatically."
-        }
-        rows={6}
-        className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-      />
+      {channel === "email" && (
+        <div className="flex rounded-lg border border-[var(--hq-card-border)] bg-neutral-50 p-0.5 w-fit">
+          <button
+            type="button"
+            onClick={() => setBodyMode("plain")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              bodyMode === "plain" ? "bg-[var(--hq-accent)] text-white" : "text-[var(--hq-text-muted)]"
+            }`}
+          >
+            Plain text
+          </button>
+          <button
+            type="button"
+            onClick={() => setBodyMode("visual")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              bodyMode === "visual" ? "bg-[var(--hq-accent)] text-white" : "text-[var(--hq-text-muted)]"
+            }`}
+          >
+            Visual builder — images, colors, buttons
+          </button>
+        </div>
+      )}
+
+      {useVisual ? (
+        <BlockEditor blocks={blocks} settings={settings} onChange={(b, s) => { setBlocks(b); setSettings(s); }} />
+      ) : (
+        <textarea
+          required
+          placeholder={
+            channel === "email"
+              ? "Email body (HTML or plain text) — supports {{contactName}}, {{companyName}}. An unsubscribe link is added automatically."
+              : "Text message — supports {{contactName}}, {{companyName}}. \"Reply STOP to unsubscribe\" is added automatically."
+          }
+          rows={6}
+          className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      )}
 
       <div>
         <p className="text-xs font-semibold text-[var(--hq-text)]">Audience</p>

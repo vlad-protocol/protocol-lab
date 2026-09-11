@@ -34,7 +34,7 @@ model User {
 
   reels               Reel[]
   stats               WeeklyStat[]
-  contactsCreated     Contact[]           @relation("CreatedBy")
+  contactsCreated     Contact[]            @relation("CreatedBy")
   interactions        Interaction[]
   automations         Automation[]
   emailTemplates      EmailTemplate[]
@@ -149,11 +149,11 @@ model Contact {
 
   dateFirstContacted DateTime?
   lastContactDate    DateTime?
-  totalTouches        Int       @default(0)
-  eventOpportunity    String?
-  dealValue           Float?
-  followUpOwner       String?
-  notes               String?
+  totalTouches       Int       @default(0)
+  eventOpportunity   String?
+  dealValue          Float?
+  followUpOwner      String?
+  notes              String?
 
   createdById String?
   createdBy   User?    @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -172,15 +172,15 @@ model Contact {
 
   interactions        Interaction[]
   sequenceEnrollments SequenceEnrollment[]
-  shootCards     ShootCard[]
-  labEntries     StudioEntry[]
-  calendarEvents CalendarEvent[]
-  docs           DocRecord[]
-  recordings     Recording[]
-  meetingNotes   MeetingNote[]
-  adCampaigns    AdCampaign[]
-  emailSends     EmailSend[]
-  smsSends       SmsSend[]
+  shootCards          ShootCard[]
+  labEntries          StudioEntry[]
+  calendarEvents      CalendarEvent[]
+  docs                DocRecord[]
+  recordings          Recording[]
+  meetingNotes        MeetingNote[]
+  adCampaigns         AdCampaign[]
+  emailSends          EmailSend[]
+  smsSends            SmsSend[]
 
   @@index([email])
   @@index([phone])
@@ -760,8 +760,16 @@ model EmailCampaign {
   id      String         @id @default(cuid())
   name    String
   subject String
-  body    String // HTML/plain body — supports {{contactName}}, {{companyName}} merge fields; an unsubscribe link is appended automatically at send time
+  body    String // HTML/plain body — supports {{contactName}}, {{companyName}} merge fields; an unsubscribe link is appended automatically at send time. Ignored (kept only as a fallback/plain-text source) when `blocks` is set.
   status  CampaignStatus @default(DRAFT)
+
+  // Visual block editor: an ordered array of EmailBlock objects (image,
+  // heading, text, button-with-link, divider, spacer — see
+  // src/lib/email-blocks.ts) plus page-level EmailSettings (background
+  // color, container color, max width). When set, this — not `body` — is
+  // what gets rendered and sent.
+  blocks   Json?
+  settings Json?
 
   // Ad hoc audience filter, matching the same shape as the CRM's own
   // filters: { types?: ContactType[], statuses?: LeadStatus[], search?: string }
@@ -781,20 +789,29 @@ model EmailCampaign {
 }
 
 model EmailSend {
-  id         String     @id @default(cuid())
-  campaignId String
-  campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contactId  String?
-  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  id           String              @id @default(cuid())
+  campaignId   String
+  campaign     EmailCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId    String?
+  contact      Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
   listMemberId String?
-  listMember    ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
-  toEmail    String // snapshot — survives the contact being edited/deleted later
-  toName     String?
-  status     SendStatus @default(PENDING)
-  externalId String? // SES message id
-  error      String?
-  sentAt     DateTime?
-  createdAt  DateTime   @default(now())
+  listMember   ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
+  toEmail      String // snapshot — survives the contact being edited/deleted later
+  toName       String?
+  status       SendStatus          @default(PENDING)
+  externalId   String? // SES message id
+  error        String?
+  sentAt       DateTime?
+  createdAt    DateTime            @default(now())
+
+  // Open/click tracking — set by the tracking pixel and link-redirect
+  // routes (src/app/api/track/*) the first time the recipient's email
+  // client hits them. openedAt is also set on the first click, since a
+  // click implies an open even if the pixel itself was blocked.
+  openedAt       DateTime?
+  firstClickedAt DateTime?
+  lastClickedAt  DateTime?
+  clickCount     Int       @default(0)
 
   @@unique([campaignId, contactId])
   @@unique([campaignId, listMemberId])
@@ -834,20 +851,20 @@ model SmsCampaign {
 }
 
 model SmsSend {
-  id         String     @id @default(cuid())
-  campaignId String
-  campaign   SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contactId  String?
-  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  id           String              @id @default(cuid())
+  campaignId   String
+  campaign     SmsCampaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId    String?
+  contact      Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
   listMemberId String?
-  listMember    ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
-  toPhone    String
-  toName     String?
-  status     SendStatus @default(PENDING)
-  externalId String? // Twilio message sid
-  error      String?
-  sentAt     DateTime?
-  createdAt  DateTime   @default(now())
+  listMember   ProtocolListMember? @relation(fields: [listMemberId], references: [id], onDelete: SetNull)
+  toPhone      String
+  toName       String?
+  status       SendStatus          @default(PENDING)
+  externalId   String? // Twilio message sid
+  error        String?
+  sentAt       DateTime?
+  createdAt    DateTime            @default(now())
 
   @@unique([campaignId, contactId])
   @@unique([campaignId, listMemberId])
