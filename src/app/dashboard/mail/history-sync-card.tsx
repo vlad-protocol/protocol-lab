@@ -26,6 +26,7 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
     setSyncing(true);
     setError(null);
     let first = true;
+    let quotaRetries = 0;
     while (!stopRef.current) {
       const res = await fetch("/api/mail/history-sync", {
         method: "POST",
@@ -35,9 +36,20 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
       first = false;
       const d = await res.json().catch(() => null);
       if (!res.ok || !d) {
-        setError(d?.error || "Sync failed.");
+        // Gmail's per-minute quota can still get tripped by a big backlog
+        // even with the server-side retry/backoff — that's transient, not
+        // a real failure, so wait it out a few times before giving up and
+        // showing the user an error.
+        const message = d?.error || "Sync failed.";
+        if (/quota exceeded|rate limit/i.test(message) && quotaRetries < 5) {
+          quotaRetries += 1;
+          await new Promise((r) => setTimeout(r, 15_000));
+          continue;
+        }
+        setError(message);
         break;
       }
+      quotaRetries = 0;
       setProgress({ running: !d.done, done: d.done, phase: d.phase, processed: d.processed, matched: d.matched });
       if (d.done) break;
     }
@@ -54,16 +66,17 @@ export function HistorySyncCard({ connected, email }: { connected: boolean; emai
             <History className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> Full mailbox history sync
           </p>
           <p className="mt-1 text-xs text-[var(--hq-text-muted)]">
-            Scans every email {email} has ever sent <em>and</em> received — not just recent ones —
-            and attaches each to any lead on the To line, cc&apos;d, or in the From header, so their
-            whole history shows up on the contact page regardless of which direction the email went.
+            Scans every email {email} has ever sent <em>and</em> received — including archived
+            mail, not just what&apos;s still in the Inbox or Sent folder — and attaches each to any
+            lead on the To line, cc&apos;d, or in the From header, so their whole history shows up
+            on the contact page regardless of which direction the email went.
           </p>
           {progress && (
             <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
               {progress.done
                 ? `Done — scanned ${progress.processed} emails (sent + received), linked ${progress.matched} to leads.`
                 : progress.processed > 0
-                  ? `In progress (scanning ${progress.phase === "INBOX" ? "inbox" : "sent mail"}) — ${progress.processed} scanned so far, ${progress.matched} linked to leads.`
+                  ? `In progress — ${progress.processed} scanned so far, ${progress.matched} linked to leads.`
                   : null}
             </p>
           )}

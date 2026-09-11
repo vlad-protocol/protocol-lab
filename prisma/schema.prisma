@@ -362,15 +362,15 @@ model GmailConnection {
   expiresAt    DateTime
   connectedAt  DateTime @default(now())
 
-  // Progress for the one-time full-mailbox "Sent" history backfill (see
+  // Progress for the one-time full-mailbox history backfill (see
   // src/lib/gmail-history-sync.ts) — a Gmail list pageToken to resume
   // from, so a mailbox with thousands of messages can be processed in
   // repeated bounded chunks (one HTTP request each) instead of one huge
   // request that would time out.
-  // "SENT" | "INBOX" | "DONE" — the backfill walks Sent to completion
-  // first, then Inbox, so a lead's email shows up whichever direction it
-  // went.
-  historySyncPhase     String    @default("SENT")
+  // "ALL" | "DONE" — walks the whole mailbox (minus Spam/Trash) in one
+  // pass rather than by label, since an archived message keeps existing
+  // but loses the INBOX/SENT label a label-restricted walk would need.
+  historySyncPhase     String    @default("ALL")
   historySyncCursor    String?
   historySyncDone      Boolean   @default(false)
   historySyncProcessed Int       @default(0)

@@ -3,28 +3,31 @@ import { listGmailMessagesPage, extractEmailAddresses, extractEmailAddress } fro
 import { mapEmailsToContactIds } from "@/lib/crm-contact";
 
 // One-time backfill: walks every message in the connected Gmail
-// account's Sent mail, then every message in Inbox — not just the last
-// N of either — and for each one, links it to every CRM contact whose
-// email shows up in the To, Cc, or From header. So a lead shows up on
-// their CRM timeline no matter which direction the email went (you sent
-// it, they sent it) and no matter whether they were the primary
-// recipient or only cc'd.
+// account's mailbox — not just what's currently in Inbox or Sent, but
+// everything "All Mail" would show (minus Spam/Trash) — and for each
+// one, links it to every CRM contact whose email shows up in the To,
+// Cc, or From header. So a lead shows up on their CRM timeline no
+// matter which direction the email went (you sent it, they sent it),
+// no matter whether they were the primary recipient or only cc'd, and
+// regardless of whether the message still carries an INBOX or SENT
+// label — an archived message keeps existing but loses the INBOX
+// label, so an earlier version of this that walked SENT then INBOX by
+// label silently missed anything already archived.
 //
 // A mailbox can hold thousands of messages, and Gmail's API is one
 // message per network round-trip for headers, so this can't run in a
 // single request without risking a timeout. Instead each call processes
 // a bounded number of messages (respecting a wall-clock time budget) and
-// persists a Gmail pageToken cursor plus which phase (Sent vs Inbox)
-// it's in, so the next call picks up exactly where the last one left
-// off. The client just calls this repeatedly until it reports done.
+// persists a Gmail pageToken cursor so the next call picks up exactly
+// where the last one left off. The client just calls this repeatedly
+// until it reports done.
 //
 // Dedup is per (message, contact) pair rather than per message alone —
 // deliberately, since one email can legitimately need to attach to
 // several different leads (one in To, another in Cc).
 
-const PAGE_SIZE = 25;
-const PHASE_LABELS: Record<string, string[]> = { SENT: ["SENT"], INBOX: ["INBOX"] };
-const NEXT_PHASE: Record<string, string> = { SENT: "INBOX", INBOX: "DONE" };
+const PAGE_SIZE = 20;
+const NEXT_PHASE: Record<string, string> = { ALL: "DONE" };
 
 export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000) {
   const started = Date.now();
@@ -39,15 +42,18 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
     await prisma.gmailConnection.update({ where: { userId }, data: { historySyncStartedAt: new Date() } });
   }
 
-  let phase = conn.historySyncPhase || "SENT";
+  let phase = conn.historySyncPhase === "DONE" ? "ALL" : conn.historySyncPhase || "ALL";
   let cursor = conn.historySyncCursor || undefined;
   let processed = conn.historySyncProcessed;
   let matchedTotal = conn.historySyncMatched;
   let done = false;
 
   while (Date.now() - started < budgetMs && phase !== "DONE") {
-    const direction = phase === "SENT" ? "OUTBOUND" : "INBOUND";
-    const { messages, nextPageToken } = await listGmailMessagesPage(userId, PHASE_LABELS[phase], cursor, PAGE_SIZE);
+    // [] walks the whole mailbox (minus Spam/Trash) rather than
+    // restricting to a label, so an archived message that no longer
+    // carries INBOX/SENT is still found. Direction is read per-message
+    // below from its own labelIds, not assumed from which query found it.
+    const { messages, nextPageToken } = await listGmailMessagesPage(userId, [], cursor, PAGE_SIZE);
 
     if (messages.length > 0) {
       const allAddresses = new Set<string>();
@@ -95,11 +101,15 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
           await prisma.interaction.createMany({
             data: toCreate.map((p) => {
               const parsedDate = new Date(p.m.date);
+              // A message keeps SENT as long as it was sent from this
+              // account, even after being archived — that's the
+              // reliable per-message signal, not which query found it.
+              const direction: "OUTBOUND" | "INBOUND" = p.m.labelIds.includes("SENT") ? "OUTBOUND" : "INBOUND";
               return {
                 contactId: p.contactId,
                 userId: direction === "OUTBOUND" ? userId : undefined,
                 type: "EMAIL" as const,
-                direction: direction as "OUTBOUND" | "INBOUND",
+                direction,
                 subject: p.m.subject || null,
                 body: p.m.snippet || null,
                 fromAddress: extractEmailAddress(p.m.from) || p.m.from || null,
@@ -150,7 +160,7 @@ export async function restartGmailHistorySync(userId: string) {
   await prisma.gmailConnection.update({
     where: { userId },
     data: {
-      historySyncPhase: "SENT",
+      historySyncPhase: "ALL",
       historySyncCursor: null,
       historySyncDone: false,
       historySyncProcessed: 0,

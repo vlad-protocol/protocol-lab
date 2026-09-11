@@ -18,6 +18,42 @@ function getOAuthClient() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The Gmail API's per-user rate limit is easy to trip during a bulk
+// backfill (one list call + one get call per message, potentially
+// thousands of messages) — it comes back as a 429/403 "quota exceeded"
+// error rather than something transient-looking, so without retry logic
+// the whole sync chunk fails outright on the first burst. Retries with
+// growing backoff instead of surfacing a fatal error for something that
+// clears up in a second or two.
+function isRateLimitError(err: unknown): boolean {
+  const e = err as { code?: number; response?: { status?: number }; errors?: { reason?: string }[]; message?: string };
+  const status = e?.code ?? e?.response?.status;
+  if (status === 429 || status === 403) {
+    const reasons = e?.errors?.map((x) => x.reason || "") || [];
+    if (status === 429) return true;
+    if (reasons.some((r) => /rateLimitExceeded|quotaExceeded|userRateLimitExceeded/i.test(r))) return true;
+  }
+  return /quota exceeded/i.test(String(e?.message || ""));
+}
+
+async function withGmailRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isRateLimitError(err) || i === tries - 1) throw err;
+      await sleep(500 * 2 ** i + Math.random() * 250);
+    }
+  }
+  throw lastErr;
+}
+
 export function isGmailConfigured() {
   return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI);
 }
@@ -334,13 +370,22 @@ export type GmailSentMessage = {
   subject: string;
   date: string;
   snippet: string;
+  // Gmail's own labels for this message (e.g. ["INBOX"], ["SENT"], or
+  // neither once something's been archived out of Inbox). The history
+  // backfill uses this — not which label it queried by — to tell
+  // inbound from outbound, since a message can be found by search long
+  // after it's lost the INBOX/SENT label that would otherwise identify it.
+  labelIds: string[];
 };
 
-// One page of the given label(s), with To/Cc headers (unlike
-// listGmailInbox, which only needs From for its purpose) — this is what
-// the full-history backfill walks page by page via pageToken, for
-// either SENT or INBOX, to cover a mailbox of any size without one
-// giant request.
+// One page of messages, with To/Cc headers (unlike listGmailInbox, which
+// only needs From for its purpose) — this is what the full-history
+// backfill walks page by page via pageToken, to cover a mailbox of any
+// size without one giant request. Pass labelIds=[] to walk the whole
+// mailbox (every message Gmail's own "All Mail" would show, minus Spam
+// and Trash) rather than restricting to messages that still carry a
+// particular label — an archived message keeps existing but loses the
+// INBOX label, so a label-restricted walk would silently skip it forever.
 export async function listGmailMessagesPage(
   userId: string,
   labelIds: string[],
@@ -350,37 +395,46 @@ export async function listGmailMessagesPage(
   const client = await getClientForUser(userId);
   const gmail = google.gmail({ version: "v1", auth: client });
 
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    maxResults,
-    labelIds,
-    pageToken,
-  });
+  const list = await withGmailRetry(() =>
+    gmail.users.messages.list({
+      userId: "me",
+      maxResults,
+      labelIds: labelIds.length ? labelIds : undefined,
+      pageToken,
+    })
+  );
   const refs = list.data.messages || [];
 
-  const messages = await Promise.all(
-    refs.map(async (ref) => {
-      const msg = await gmail.users.messages.get({
+  // Fetched one at a time (not Promise.all'd) with a small gap between
+  // each — a burst of dozens of concurrent .get calls is exactly what
+  // trips the per-minute quota during a backfill. Slower, but it's a
+  // background sync, not something a user is staring at a spinner for.
+  const messages: GmailSentMessage[] = [];
+  for (const ref of refs) {
+    const msg = await withGmailRetry(() =>
+      gmail.users.messages.get({
         userId: "me",
         id: ref.id as string,
         format: "metadata",
         metadataHeaders: ["From", "To", "Cc", "Subject", "Date"],
-      });
-      const headers = msg.data.payload?.headers || [];
-      const header = (name: string) =>
-        headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
-      return {
-        id: msg.data.id as string,
-        threadId: (msg.data.threadId || "") as string,
-        from: header("From"),
-        to: header("To"),
-        cc: header("Cc"),
-        subject: header("Subject"),
-        date: header("Date"),
-        snippet: msg.data.snippet || "",
-      };
-    })
-  );
+      })
+    );
+    const headers = msg.data.payload?.headers || [];
+    const header = (name: string) =>
+      headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+    messages.push({
+      id: msg.data.id as string,
+      threadId: (msg.data.threadId || "") as string,
+      from: header("From"),
+      to: header("To"),
+      cc: header("Cc"),
+      subject: header("Subject"),
+      date: header("Date"),
+      snippet: msg.data.snippet || "",
+      labelIds: msg.data.labelIds || [],
+    });
+    await sleep(60);
+  }
 
   return { messages, nextPageToken: list.data.nextPageToken || null };
 }
