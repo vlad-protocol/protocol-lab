@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, Mail, Phone, Trash2 } from "lucide-react";
+import { Building2, Mail, Phone, Trash2, Pencil, Check, X } from "lucide-react";
 import {
   type LeadPriority,
   type LeadStatus,
@@ -38,6 +38,10 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
   const [priority, setPriority] = useState(lead.priority || "");
   const [type, setType] = useState(lead.type);
   const [assignedRep, setAssignedRep] = useState(lead.assignedRep || "");
+  const [editingName, setEditingName] = useState(false);
+  const [contactName, setContactName] = useState(lead.contactName);
+  const [companyName, setCompanyName] = useState(lead.companyName || "");
+  const [savingName, setSavingName] = useState(false);
 
   async function updateField(patch: Record<string, unknown>) {
     await fetch(`/api/contacts/${lead.id}`, {
@@ -46,6 +50,23 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
       body: JSON.stringify(patch),
     });
     router.refresh();
+  }
+
+  async function saveName() {
+    if (!contactName.trim() && !companyName.trim()) return; // at least one name is required
+    setSavingName(true);
+    await updateField({
+      contactName: contactName.trim() || companyName.trim(),
+      companyName: companyName.trim() || null,
+    });
+    setSavingName(false);
+    setEditingName(false);
+  }
+
+  function cancelEditName() {
+    setContactName(lead.contactName);
+    setCompanyName(lead.companyName || "");
+    setEditingName(false);
   }
 
   async function handleDelete() {
@@ -57,12 +78,50 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
   return (
     <div className="mt-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-5">
       <div className="flex items-start justify-between">
-        <div>
+        <div className="flex-1">
           <p className="text-xs text-[var(--hq-text-muted)]">Lead #{lead.number}</p>
-          <h1 className="text-xl font-semibold text-[var(--hq-text)]">
-            {lead.companyName || lead.contactName}
-          </h1>
-          {lead.companyName && lead.contactName !== lead.companyName && (
+          {editingName ? (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <input
+                autoFocus
+                placeholder="Contact name"
+                className="rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-lg font-semibold text-[var(--hq-text)]"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+              />
+              <input
+                placeholder="Company name (optional)"
+                className="rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text-muted)]"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+              />
+              <button
+                onClick={saveName}
+                disabled={savingName}
+                title="Save"
+                className="text-[var(--hq-positive)] hover:opacity-70 disabled:opacity-50"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button onClick={cancelEditName} title="Cancel" className="text-[var(--hq-text-muted)] hover:text-red-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="group flex items-center gap-1.5">
+              <h1 className="text-xl font-semibold text-[var(--hq-text)]">{lead.companyName || lead.contactName}</h1>
+              <button
+                onClick={() => setEditingName(true)}
+                title="Rename"
+                className="text-[var(--hq-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hq-accent)]"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {!editingName && lead.companyName && lead.contactName !== lead.companyName && (
             <p className="flex items-center gap-1 text-sm text-[var(--hq-text-muted)]">
               <Building2 className="h-3.5 w-3.5" />
               {lead.title ? `${lead.title}, ` : ""}
