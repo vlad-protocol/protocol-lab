@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles } from "lucide-react";
+import { EmailInteractionModal } from "./email-interaction-modal";
 
 type Interaction = {
   id: string;
@@ -14,6 +15,7 @@ type Interaction = {
   phoneNumber: string | null;
   durationSeconds: number | null;
   recordingUrl: string | null;
+  externalId: string | null;
   occurredAt: string;
   user: { id: string; name: string | null; email: string } | null;
 };
@@ -50,6 +52,9 @@ export function Timeline({
   const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "" });
   const [textForm, setTextForm] = useState({ to: contactPhone || "", body: "" });
   const [emailForm, setEmailForm] = useState({ to: contactEmail || "", subject: "", body: "" });
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [viewingEmailId, setViewingEmailId] = useState<string | null>(null);
   const [repPhone, setRepPhone] = useState("");
 
   function closeAndRefresh() {
@@ -122,6 +127,28 @@ export function Timeline({
     }
     setTextForm({ to: contactPhone || "", body: "" });
     closeAndRefresh();
+  }
+
+  async function suggestFollowUp() {
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/suggest-followup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDraftError(d.error || "Couldn't draft a follow-up.");
+        return;
+      }
+      setEmailForm((f) => ({ ...f, subject: d.subject || f.subject, body: d.body || f.body }));
+    } catch {
+      setDraftError("Couldn't draft a follow-up.");
+    } finally {
+      setDrafting(false);
+    }
   }
 
   async function submitEmail(sendReal: boolean) {
@@ -363,6 +390,17 @@ export function Timeline({
                 value={emailForm.body}
                 onChange={(e) => setEmailForm({ ...emailForm, body: e.target.value })}
               />
+              <div>
+                <button
+                  type="button"
+                  onClick={suggestFollowUp}
+                  disabled={drafting}
+                  className="flex items-center gap-1.5 rounded-full border border-[var(--hq-accent)] px-3 py-1.5 text-xs font-medium text-[var(--hq-accent)] disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> {drafting ? "Drafting…" : "AI: Suggest a follow-up"}
+                </button>
+                {draftError && <p className="mt-1 text-xs text-red-600">{draftError}</p>}
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => submitEmail(true)} disabled={submitting} className="rounded-md bg-[var(--hq-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
                   Send via Gmail
@@ -409,12 +447,28 @@ export function Timeline({
                       {i.type === "VIDEO_CALL" ? "Watch recording" : "Play recording"}
                     </a>
                   )}
+                  {i.type === "EMAIL" && i.externalId && (
+                    <button
+                      onClick={() => setViewingEmailId(i.id)}
+                      className="font-medium text-[var(--hq-accent)] hover:underline"
+                    >
+                      View full email · Reply · Forward
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {viewingEmailId && (
+        <EmailInteractionModal
+          contactId={contactId}
+          interactionId={viewingEmailId}
+          onClose={() => setViewingEmailId(null)}
+        />
+      )}
     </div>
   );
 }
