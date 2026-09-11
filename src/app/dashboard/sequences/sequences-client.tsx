@@ -149,12 +149,13 @@ export function SequencesClient({
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--hq-accent)]/30 bg-[var(--hq-accent)]/5 p-4">
           <div>
             <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--hq-text)]">
-              <Sparkles className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> New sponsorship outreach templates available
+              <Sparkles className="h-3.5 w-3.5 text-[var(--hq-accent)]" /> Newer sponsorship outreach templates available
             </p>
             <p className="mt-0.5 text-xs text-[var(--hq-text-muted)]">
-              Your existing "New Lead Follow-Up" sequence can be upgraded in place to the new
-              "Sponsor Cold Outreach" templates — AI-researched personalization, confirmed by you
-              before anything sends.
+              Your "Sponsor Cold Outreach" sequence is missing the latest templates (including the
+              French versions) — click to sync its steps in place to what's currently saved here.
+              This overwrites that sequence's current subject/body with the latest templates, so
+              save any manual edits elsewhere first if you want to keep them.
             </p>
             {upgradeResult && <p className="mt-1 text-xs text-[var(--hq-text-muted)]">{upgradeResult}</p>}
           </div>
@@ -163,7 +164,7 @@ export function SequencesClient({
             disabled={upgrading}
             className="shrink-0 rounded-md bg-[var(--hq-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
           >
-            {upgrading ? "Upgrading…" : "Upgrade now"}
+            {upgrading ? "Syncing…" : "Sync now"}
           </button>
         </div>
       )}

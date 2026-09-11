@@ -1,7 +1,7 @@
 import { Repeat } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
-import { getOrSeedDefaultSequence } from "@/lib/sequences";
+import { getOrSeedDefaultSequence, DEFAULT_SEQUENCE_TEMPLATE } from "@/lib/sequences";
 import { SequencesClient } from "./sequences-client";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +13,19 @@ export default async function SequencesPage() {
   // sequence seeded automatically — see getOrSeedDefaultSequence for why.
   await getOrSeedDefaultSequence(session.user.id);
 
-  // Accounts that already had a sequence seeded under the old name, before
-  // the Sponsor Cold Outreach templates existed, don't get upgraded by the
-  // seed above (it only fires on a completely empty table) — surface an
-  // upgrade button instead. See /api/admin/migrate-sponsor-sequence.
-  const hasOldDefaultSequence = !!(await prisma.emailSequence.findFirst({
-    where: { name: "New Lead Follow-Up" },
-    select: { id: true },
-  }));
+  // Accounts whose default sequence predates the current templates don't
+  // get refreshed by the seed above (it only fires on a completely empty
+  // table) — surface a sync button instead. See
+  // /api/admin/migrate-sponsor-sequence. Two tells that it's stale: it's
+  // still under the old name, or it's under the current name but a step
+  // is missing its French version (every step in the current template has
+  // one, so a missing bodyFr means this predates that update).
+  const oldNamed = await prisma.emailSequence.findFirst({ where: { name: "New Lead Follow-Up" }, select: { id: true } });
+  const currentNamed = await prisma.emailSequence.findFirst({
+    where: { name: DEFAULT_SEQUENCE_TEMPLATE.name },
+    select: { steps: { select: { bodyFr: true } } },
+  });
+  const hasOldDefaultSequence = !!oldNamed || !!currentNamed?.steps.some((s) => !s.bodyFr);
 
   const sequences = await prisma.emailSequence.findMany({
     orderBy: { createdAt: "asc" },
