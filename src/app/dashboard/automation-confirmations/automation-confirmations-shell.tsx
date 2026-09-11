@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Send, SkipForward, XCircle, Sparkles, ExternalLink, RefreshCw } from "lucide-react";
+import { Send, SkipForward, XCircle, Sparkles, ExternalLink, RefreshCw, Wand2 } from "lucide-react";
 
 type Draft = {
   id: string;
@@ -100,12 +100,28 @@ function DraftCard({ draft, onHandled }: { draft: Draft; onHandled: () => void }
   const router = useRouter();
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
-  const [busy, setBusy] = useState<"send" | "skip" | "cancel" | null>(null);
+  const [researchNotes, setResearchNotes] = useState(draft.researchNotes);
+  const [busy, setBusy] = useState<"send" | "skip" | "cancel" | "regenerate" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const needsResearchReview = !!draft.researchNotes;
+  const needsResearchReview = !!researchNotes;
   const researchLooksThin =
-    draft.researchNotes && /not available|didn't turn up anything|fill in|by hand/i.test(draft.researchNotes);
+    researchNotes && /not available|didn't turn up anything|fill in|by hand/i.test(researchNotes);
+
+  async function regenerate() {
+    setBusy("regenerate");
+    setError(null);
+    const res = await fetch(`/api/automation-confirmations/${draft.id}/regenerate`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) {
+      setError(d.error || "Failed to regenerate.");
+      return;
+    }
+    setSubject(d.subject);
+    setBody(d.body);
+    setResearchNotes(d.researchNotes);
+  }
 
   async function send() {
     setBusy("send");
@@ -174,7 +190,16 @@ function DraftCard({ draft, onHandled }: { draft: Draft; onHandled: () => void }
           }`}
         >
           <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <p>{draft.researchNotes}</p>
+          <p className="flex-1">{researchNotes}</p>
+          <button
+            onClick={regenerate}
+            disabled={busy !== null}
+            title="Re-run live research for this step"
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-current/30 px-2 py-1 text-[11px] font-medium hover:opacity-70 disabled:opacity-50"
+          >
+            <Wand2 className={`h-3 w-3 ${busy === "regenerate" ? "animate-spin" : ""}`} />
+            {busy === "regenerate" ? "Regenerating…" : "Regenerate research"}
+          </button>
         </div>
       )}
 

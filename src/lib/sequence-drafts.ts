@@ -108,6 +108,71 @@ export async function runDueSequenceDraftGeneration(baseUrl: string) {
   return results;
 }
 
+// Re-runs the live research for a pending draft's step and rebuilds its
+// subject/body from scratch with the fresh observation/hook — for when
+// the first pass came back thin, failed outright (e.g. the research
+// API key was out of credits), or the lead's details changed since it
+// was drafted. Any manual edits sitting in the confirmation textarea are
+// discarded in favor of the newly-merged template, same as the original
+// draft generation.
+export async function regenerateDraftResearch(draftId: string, baseUrl: string) {
+  const draft = await prisma.sequenceStepDraft.findUnique({
+    where: { id: draftId },
+    include: {
+      enrollment: {
+        include: {
+          contact: true,
+          sequence: { include: { steps: { orderBy: { order: "asc" } } } },
+        },
+      },
+    },
+  });
+  if (!draft) throw new Error("Draft not found.");
+  if (draft.status !== "PENDING") throw new Error("This draft has already been handled.");
+
+  const { enrollment } = draft;
+  const step = enrollment.sequence.steps[draft.stepOrder];
+  if (!step) throw new Error("This step no longer exists on its sequence.");
+  if (!step.researchAngle) throw new Error("This step doesn't use live research.");
+
+  const repUser = enrollment.sequence.createdById
+    ? await prisma.user.findUnique({ where: { id: enrollment.sequence.createdById } })
+    : null;
+
+  const brand = enrollment.contact.companyName || enrollment.contact.contactName;
+  const result = await researchStepPersonalization({
+    brand,
+    angle: step.researchAngle,
+    language: enrollment.contact.language,
+    context: {
+      website: enrollment.contact.website,
+      industry: enrollment.contact.industry,
+      eventOpportunity: enrollment.contact.eventOpportunity,
+      notes: enrollment.contact.notes,
+    },
+  });
+
+  const observation = result.observation;
+  const hook = result.hook || result.observation.slice(0, 60);
+  const researchNotes = result.note
+    ? `Live research wasn't available (${result.note}) — please write this step's observation yourself before confirming.`
+    : !result.observation
+      ? "Web search ran but didn't turn up anything solid and verifiable — please fill in the observation yourself before confirming."
+      : `${result.researchedLive ? "Researched live via web search" : "Drafted from CRM notes only, no live search"} — confidence: ${result.confidence}.${
+          result.sources.length ? ` Sources: ${result.sources.join(", ")}` : ""
+        }`;
+
+  const vars = { observation, hook, bookingLink: `${baseUrl}/book` };
+  const template = stepTemplateFor(step, enrollment.contact.language);
+  const subject = fillTemplate(template.subject, enrollment.contact, repUser?.name || "", vars);
+  const body = fillTemplate(template.body, enrollment.contact, repUser?.name || "", vars);
+
+  return prisma.sequenceStepDraft.update({
+    where: { id: draftId },
+    data: { subject, body, researchNotes },
+  });
+}
+
 // Sends a confirmed draft as-is (whatever subject/body it currently
 // holds — the caller should have already saved any edits), logs it as a
 // normal outbound Interaction, and advances the enrollment to its next

@@ -12,7 +12,11 @@
 // this fails soft: it returns an empty observation with a note saying
 // so, rather than inventing something.
 
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
+// Cheap by default: this only needs to pull one verifiable fact and turn
+// it into a sentence — web_search does the actual work, so a small model
+// is plenty. Override with the ANTHROPIC_MODEL env var if a specific
+// snapshot is ever needed instead of the rolling "claude-haiku-4-5" alias.
+const DEFAULT_MODEL = "claude-haiku-4-5";
 
 export type ObservationResult = {
   observation: string;
@@ -44,7 +48,10 @@ async function callClaudeWithSearch(system: string, userMessage: string): Promis
       max_tokens: 1400,
       system,
       messages: [{ role: "user", content: userMessage }],
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
+      // 1 search keeps this cheap ($10/1,000 searches, billed per use) and
+      // avoids paying to ingest 2-3 extra search-result pages as input
+      // tokens for what only needs to become a single sentence.
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
     }),
   });
 
