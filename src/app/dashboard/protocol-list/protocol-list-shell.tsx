@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Plus, Trash2, Search, Upload, FileSpreadsheet } from "lucide-react";
+import { Plus, Trash2, Search, Upload, FileSpreadsheet, Sparkles } from "lucide-react";
 
 type Member = {
   id: string;
@@ -19,6 +19,8 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -35,6 +37,28 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
     if (!confirm("Remove this person from the Protocol List?")) return;
     await fetch(`/api/protocol-list/${id}`, { method: "DELETE" });
     setMembers((prev) => prev.filter((m) => m.id !== id));
+  }
+
+  // One-time fix for data imported before dates and phone numbers could
+  // get mixed up (see src/lib/protocol-list-import.ts) — blanks out any
+  // phone value that's actually a date, and reformats real phone numbers
+  // into one consistent, clean shape.
+  async function cleanupPhones() {
+    setCleaning(true);
+    setCleanupResult(null);
+    const res = await fetch("/api/protocol-list/cleanup-phones", { method: "POST" });
+    const d = await res.json().catch(() => null);
+    setCleaning(false);
+    if (!res.ok || !d) {
+      setCleanupResult("Failed to clean up phone numbers.");
+      return;
+    }
+    setCleanupResult(
+      `Scanned ${d.scanned} — cleared ${d.cleared} date${d.cleared === 1 ? "" : "s"} that had landed in the phone field, reformatted ${d.reformatted}.`
+    );
+    fetch("/api/protocol-list")
+      .then((r) => r.json())
+      .then((data) => data.members && setMembers(data.members));
   }
 
   return (
@@ -85,7 +109,16 @@ export function ProtocolListShell({ initialMembers }: { initialMembers: Member[]
         >
           <FileSpreadsheet className="h-3.5 w-3.5" /> {showImport ? "Close" : "Import CSV/Excel"}
         </button>
+        <button
+          onClick={cleanupPhones}
+          disabled={cleaning}
+          className="flex items-center gap-1 rounded-full border border-[var(--hq-card-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--hq-text)] disabled:opacity-50"
+        >
+          <Sparkles className="h-3.5 w-3.5" /> {cleaning ? "Cleaning…" : "Clean up phone numbers"}
+        </button>
       </div>
+
+      {cleanupResult && <p className="mt-2 text-xs text-[var(--hq-text-muted)]">{cleanupResult}</p>}
 
       {showAdd && (
         <AddForm

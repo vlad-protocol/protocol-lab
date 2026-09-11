@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { isDateLike, normalizePhoneDisplay } from "@/lib/phone-format";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+()\-.\s\d]{7,20}$/;
@@ -10,11 +11,20 @@ export type ImportedRow = { name: string | null; email: string | null; phone: st
 // phone, otherwise → name. Used both for comma-separated pasted lines and
 // as a fallback when a spreadsheet's headers don't clearly say what a
 // column is.
+//
+// A plain date (23-07-2026, 07/23/2026) is also all digits/dashes/slashes
+// and can have 7+ digits once punctuation is stripped, so it used to
+// pass the phone check below — a spreadsheet column of signup dates with
+// no recognized header would silently land in the phone field. isDateLike
+// rules those out before the phone check ever runs.
 export function classify(part: string): { email?: string; phone?: string; name?: string } {
   const trimmed = part.trim();
   if (!trimmed) return {};
   if (EMAIL_RE.test(trimmed)) return { email: trimmed.toLowerCase() };
-  if (PHONE_RE.test(trimmed) && trimmed.replace(/\D/g, "").length >= 7) return { phone: trimmed };
+  if (isDateLike(trimmed)) return {};
+  if (PHONE_RE.test(trimmed) && trimmed.replace(/\D/g, "").length >= 7) {
+    return { phone: normalizePhoneDisplay(trimmed) };
+  }
   return { name: trimmed };
 }
 
@@ -68,7 +78,10 @@ export function parseContactsFile(buffer: Buffer): { rows: ImportedRow[]; skippe
     if (hasRecognizedHeader) {
       if (nameIdx >= 0 && row[nameIdx] !== undefined) name = String(row[nameIdx] ?? "").trim() || null;
       if (emailIdx >= 0 && row[emailIdx] !== undefined) email = String(row[emailIdx] ?? "").trim() || null;
-      if (phoneIdx >= 0 && row[phoneIdx] !== undefined) phone = String(row[phoneIdx] ?? "").trim() || null;
+      if (phoneIdx >= 0 && row[phoneIdx] !== undefined) {
+        const raw = String(row[phoneIdx] ?? "").trim();
+        phone = raw ? normalizePhoneDisplay(raw) : null;
+      }
       // Any columns we didn't recognize a header for still might contain a
       // usable email/phone/name — classify them as a backfill.
       for (let i = 0; i < row.length; i++) {
