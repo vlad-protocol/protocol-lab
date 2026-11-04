@@ -34,3 +34,62 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+/* SOP client-facing document preview / PDF export — see sop-templates.ts */
+.sop-paper {
+  background: #ffffff;
+  color: #18181b;
+  border: 1px solid var(--hq-card-border);
+  border-radius: 8px;
+  padding: 32px;
+  max-width: 720px;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.55;
+}
+.sop-paper h3 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+.sop-paper .paper-meta {
+  color: #71717a;
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+.sop-paper h4 {
+  margin: 20px 0 6px;
+  font-size: 1rem;
+  font-family: var(--font-geist-sans), sans-serif;
+  color: #3b5bfa;
+}
+.sop-paper p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+.sop-paper table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  font-size: 0.9rem;
+}
+.sop-paper table td,
+.sop-paper table th {
+  border: 1px solid #e7e2d9;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.sop-paper table th {
+  background: #faf7f2;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+.sop-paper .legal-flag {
+  background: #fff4e5;
+  border: 1px solid #f3cf8f;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  margin: 12px 0;
+  font-family: var(--font-geist-sans), sans-serif;
+}

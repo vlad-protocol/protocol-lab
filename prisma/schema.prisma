@@ -84,6 +84,7 @@ model User {
   confirmedSequenceDrafts SequenceStepDraft[]
   marketingEvents         MarketingEvent[]
   activationsCreated      Activation[]
+  sopDocumentsCreated     SopDocument[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -1368,7 +1369,44 @@ model Activation {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  steps    ActivationStep[]
-  sponsors SponsorSlot[]
-  payments ActivationPayment[]
+  steps     ActivationStep[]
+  sponsors  SponsorSlot[]
+  payments  ActivationPayment[]
+  documents SopDocument[]
+}
+
+// A client-facing document built from one of the SOP's 7 templates
+// (proposal, contract, attendee form, run-of-show/shot list, roster,
+// survey, post-event report). fields/rows hold the filled-in values —
+// the template's own field/row-group definitions live in
+// src/lib/sop-templates.ts so content stays in one place. Each save is
+// a full document (not versioned); exporting to PDF happens client-side
+// from the same rendered markup used for the live preview.
+model SopDocument {
+  id           String     @id @default(cuid())
+  activationId String
+  activation   Activation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+
+  type SopDocType
+  name String
+
+  fields Json @default("{}")
+  rows   Json @default("{}")
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([activationId])
+}
+
+enum SopDocType {
+  PROPOSAL
+  CONTRACT
+  ATTENDEE
+  RUNOFSHOW
+  ROSTER
+  SURVEY
+  REPORT
 }

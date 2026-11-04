@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ACTIVATION_RULES, type ActivationRuleField } from "@/lib/activation-rules";
 import { COST_SHEET_CATALOGUE, calcActivationTotals, type CostLineItem, type PackageTier } from "@/lib/activation-cost-sheet";
+import { TEMPLATE_DEFS, renderSopPaper, type SopDocType, type SopDocValues } from "@/lib/sop-templates";
 
 type Step = { id: string; stepNumber: number; title: string; owner: string; dueDate: string | null; doneWhen: string; done: boolean };
 type Sponsor = { id: string; category: string; brandName: string | null; tier: string | null; fee: number | null; confirmed: boolean };
@@ -29,7 +30,7 @@ type ActivationData = {
   [key: string]: unknown;
 };
 
-type Tab = "timeline" | "rules" | "cost" | "sponsors" | "payments" | "docs";
+type Tab = "timeline" | "rules" | "cost" | "sponsors" | "payments" | "docs" | "templates";
 
 export function ActivationDetail({ activation }: { activation: ActivationData }) {
   const [tab, setTab] = useState<Tab>("timeline");
@@ -56,7 +57,8 @@ export function ActivationDetail({ activation }: { activation: ActivationData })
           ["cost", "Cost Sheet"],
           ["sponsors", "Sponsors"],
           ["payments", "Payments"],
-          ["docs", "Documents"],
+          ["docs", "AI Drafts"],
+          ["templates", "Templates & PDF"],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
@@ -75,6 +77,7 @@ export function ActivationDetail({ activation }: { activation: ActivationData })
         {tab === "sponsors" && <SponsorsTab activation={a} setActivation={setA} />}
         {tab === "payments" && <PaymentsTab activation={a} setActivation={setA} />}
         {tab === "docs" && <DocsTab activation={a} setActivation={setA} />}
+        {tab === "templates" && <TemplatesTab activation={a} />}
       </div>
     </div>
   );
@@ -174,11 +177,21 @@ function CostSheetTab({ activation, setActivation }: { activation: ActivationDat
   const [tier, setTier] = useState<PackageTier>(activation.packageTier);
   const [multiplier, setMultiplier] = useState(activation.clientMultiplier);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const totals = calcActivationTotals(items, tier, multiplier);
 
-  function updateItem(i: number, field: "qty" | "unitCost", value: number) {
+  function updateItem(i: number, field: keyof CostLineItem, value: string | number | boolean) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [field]: value } : it)));
+  }
+
+  function addRow() {
+    setItems((prev) => [...prev, { group: "Custom", label: "New line item", qty: 1, unitCost: 0 }]);
+  }
+
+  function removeRow(i: number) {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   async function save() {
@@ -197,72 +210,134 @@ function CostSheetTab({ activation, setActivation }: { activation: ActivationDat
     }
   }
 
+  async function exportPdf() {
+    if (!previewRef.current) return;
+    setExporting(true);
+    try {
+      await exportElementToPdf(previewRef.current, `${activation.eventName.replace(/[^a-z0-9-]+/gi, "-")}-cost-estimate.pdf`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const groups = Array.from(new Set(items.map((i) => i.group)));
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="text-sm text-[var(--hq-text-muted)]">
-          Package
-          <select value={tier} onChange={(e) => setTier(e.target.value as PackageTier)} className="ml-2 rounded border border-[var(--hq-card-border)] px-2 py-1">
-            <option value="BRONZE">Bronze</option>
-            <option value="SILVER">Silver</option>
-            <option value="GOLD">Gold</option>
-          </select>
-        </label>
-        <label className="text-sm text-[var(--hq-text-muted)]">
-          Client multiplier (5-10x)
-          <input
-            type="number"
-            min={5}
-            max={10}
-            step={0.5}
-            value={multiplier}
-            onChange={(e) => setMultiplier(Number(e.target.value))}
-            className="ml-2 w-20 rounded border border-[var(--hq-card-border)] px-2 py-1"
-          />
-        </label>
-        <button onClick={save} disabled={saving} className="rounded bg-[var(--hq-accent)] px-3 py-1 text-sm text-white disabled:opacity-50">
-          {saving ? "Saving…" : "Save & regenerate payments"}
-        </button>
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <div className="min-w-0 flex-1">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <label className="text-sm text-[var(--hq-text-muted)]">
+            Package
+            <select value={tier} onChange={(e) => setTier(e.target.value as PackageTier)} className="ml-2 rounded border border-[var(--hq-card-border)] px-2 py-1">
+              <option value="BRONZE">Bronze</option>
+              <option value="SILVER">Silver</option>
+              <option value="GOLD">Gold</option>
+            </select>
+          </label>
+          <label className="text-sm text-[var(--hq-text-muted)]">
+            Client multiplier (5-10x)
+            <input
+              type="number"
+              min={5}
+              max={10}
+              step={0.5}
+              value={multiplier}
+              onChange={(e) => setMultiplier(Number(e.target.value))}
+              className="ml-2 w-20 rounded border border-[var(--hq-card-border)] px-2 py-1"
+            />
+          </label>
+          <button onClick={addRow} className="rounded border border-[var(--hq-card-border)] px-3 py-1 text-sm text-[var(--hq-text)]">
+            + Add line item
+          </button>
+          <button onClick={save} disabled={saving} className="rounded bg-[var(--hq-accent)] px-3 py-1 text-sm text-white disabled:opacity-50">
+            {saving ? "Saving…" : "Save & regenerate payments"}
+          </button>
+          <button onClick={exportPdf} disabled={exporting} className="rounded border border-[var(--hq-card-border)] px-3 py-1 text-sm text-[var(--hq-text)] disabled:opacity-50">
+            {exporting ? "Exporting…" : "Export PDF"}
+          </button>
+        </div>
+
+        {groups.map((group) => (
+          <div key={group} className="mb-4">
+            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--hq-text-muted)]">{group}</div>
+            <table className="w-full text-sm">
+              <tbody>
+                {items.map((item, i) =>
+                  item.group === group ? (
+                    <tr key={i} className="border-b border-[var(--hq-card-border)]">
+                      <td className="w-32 py-1">
+                        <input value={item.group} onChange={(e) => updateItem(i, "group", e.target.value)} className="w-full rounded border border-[var(--hq-card-border)] px-1 text-xs" />
+                      </td>
+                      <td className="py-1">
+                        <input value={item.label} onChange={(e) => updateItem(i, "label", e.target.value)} className="w-full rounded border border-[var(--hq-card-border)] px-1" />
+                        {item.minTier ? <span className="ml-1 text-xs text-[var(--hq-text-muted)]">({item.minTier.toLowerCase()}+)</span> : null}
+                      </td>
+                      <td className="w-16 py-1">
+                        <input type="number" value={item.qty} onChange={(e) => updateItem(i, "qty", Number(e.target.value))} className="w-14 rounded border border-[var(--hq-card-border)] px-1" />
+                      </td>
+                      <td className="w-20 py-1">
+                        <input type="number" value={item.unitCost} onChange={(e) => updateItem(i, "unitCost", Number(e.target.value))} className="w-16 rounded border border-[var(--hq-card-border)] px-1" />
+                      </td>
+                      <td className="w-20 py-1 text-right">${(item.qty * item.unitCost).toFixed(0)}</td>
+                      <td className="w-6 py-1">
+                        <button onClick={() => removeRow(i)} className="text-xs text-[var(--hq-negative)]">
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ) : null
+                )}
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        <div className="rounded border border-[var(--hq-accent)] bg-[var(--hq-accent-soft)] p-3 text-sm">
+          <div>A · Multiplied base (incl. 10% contingency): ${totals.costBaseA.toFixed(2)}</div>
+          <div>A × multiplier: ${(totals.costBaseA * multiplier).toFixed(2)}</div>
+          <div>B · Pass-through: ${totals.costPassThroughB.toFixed(2)}</div>
+          <div>Pre-tax: ${totals.quotePreTax.toFixed(2)}</div>
+          <div>Tax (GST+QST): ${totals.quoteTax.toFixed(2)}</div>
+          <div className="font-semibold">Total: ${totals.quoteTotal.toFixed(2)}</div>
+        </div>
       </div>
 
-      {groups.map((group) => (
-        <div key={group} className="mb-4">
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--hq-text-muted)]">{group}</div>
-          <table className="w-full text-sm">
-            <tbody>
-              {items.map((item, i) =>
-                item.group === group ? (
-                  <tr key={i} className="border-b border-[var(--hq-card-border)]">
-                    <td className="py-1">{item.label}{item.minTier ? ` (${item.minTier.toLowerCase()}+)` : ""}</td>
-                    <td className="w-16 py-1">
-                      <input type="number" value={item.qty} onChange={(e) => updateItem(i, "qty", Number(e.target.value))} className="w-14 rounded border border-[var(--hq-card-border)] px-1" />
-                    </td>
-                    <td className="w-20 py-1">
-                      <input type="number" value={item.unitCost} onChange={(e) => updateItem(i, "unitCost", Number(e.target.value))} className="w-16 rounded border border-[var(--hq-card-border)] px-1" />
-                    </td>
-                    <td className="w-20 py-1 text-right">${(item.qty * item.unitCost).toFixed(0)}</td>
-                  </tr>
-                ) : null
-              )}
-            </tbody>
-          </table>
+      <div className="min-w-0 lg:w-[360px]">
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--hq-text-muted)]">Client-facing summary (exported)</div>
+        <div ref={previewRef} className="sop-paper">
+          <h3>{activation.eventName}</h3>
+          <div className="paper-meta">
+            Cost estimate · {activation.contact.companyName || activation.contact.contactName} · Package {tier}
+          </div>
+          {groups.map((group) => (
+            <table key={group}>
+              <thead>
+                <tr>
+                  <th colSpan={3}>{group}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items
+                  .filter((it) => it.group === group)
+                  .map((it, i) => (
+                    <tr key={i}>
+                      <td>{it.label}</td>
+                      <td>{it.qty}</td>
+                      <td>${(it.qty * it.unitCost).toFixed(0)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          ))}
+          <h4>Total investment</h4>
+          <p>${totals.quoteTotal.toFixed(2)} (incl. tax) · 20% on signing · 40% at T-7 days · 40% within 72h of delivery</p>
         </div>
-      ))}
-
-      <div className="rounded border border-[var(--hq-accent)] bg-[var(--hq-accent-soft)] p-3 text-sm">
-        <div>A · Multiplied base (incl. 10% contingency): ${totals.costBaseA.toFixed(2)}</div>
-        <div>A × multiplier: ${(totals.costBaseA * multiplier).toFixed(2)}</div>
-        <div>B · Pass-through: ${totals.costPassThroughB.toFixed(2)}</div>
-        <div>Pre-tax: ${totals.quotePreTax.toFixed(2)}</div>
-        <div>Tax (GST+QST): ${totals.quoteTax.toFixed(2)}</div>
-        <div className="font-semibold">Total: ${totals.quoteTotal.toFixed(2)}</div>
       </div>
     </div>
   );
 }
-
 function SponsorsTab({ activation, setActivation }: { activation: ActivationData; setActivation: (fn: (a: ActivationData) => ActivationData) => void }) {
   const [category, setCategory] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -398,6 +473,305 @@ function DocsTab({ activation, setActivation }: { activation: ActivationData; se
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+type SopDoc = { id: string; type: string; name: string; fields: Record<string, string>; rows: Record<string, Record<string, string>[]>; updatedAt: string };
+
+let html2pdfLoading: Promise<void> | null = null;
+function loadHtml2Pdf(): Promise<void> {
+  if (typeof window !== "undefined" && (window as unknown as { html2pdf?: unknown }).html2pdf) return Promise.resolve();
+  if (html2pdfLoading) return html2pdfLoading;
+  html2pdfLoading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Couldn't load the PDF exporter — check your connection and try again."));
+    document.head.appendChild(s);
+  });
+  return html2pdfLoading;
+}
+
+async function exportElementToPdf(el: HTMLElement, filename: string) {
+  await loadHtml2Pdf();
+  const html2pdf = (window as unknown as { html2pdf: (opts?: unknown) => { from: (el: HTMLElement) => { set: (o: object) => { save: () => Promise<void> } } } }).html2pdf;
+  await html2pdf()
+    .from(el)
+    .set({ filename, margin: 10, jsPDF: { unit: "mm", format: "letter" }, html2canvas: { scale: 2 } })
+    .save();
+}
+
+const TYPE_LIST: { key: SopDocType; apiType: string }[] = [
+  { key: "proposal", apiType: "PROPOSAL" },
+  { key: "contract", apiType: "CONTRACT" },
+  { key: "attendee", apiType: "ATTENDEE" },
+  { key: "runofshow", apiType: "RUNOFSHOW" },
+  { key: "roster", apiType: "ROSTER" },
+  { key: "survey", apiType: "SURVEY" },
+  { key: "report", apiType: "REPORT" },
+];
+
+function TemplatesTab({ activation }: { activation: ActivationData }) {
+  const [activeType, setActiveType] = useState<SopDocType>("proposal");
+  const [docs, setDocs] = useState<SopDoc[] | null>(null);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [rows, setRows] = useState<Record<string, Record<string, string>[]>>({});
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(`/api/activations/${activation.id}/documents`)
+      .then((r) => r.json())
+      .then((d) => setDocs(d.documents || []));
+  }, [activation.id]);
+
+  const def = TEMPLATE_DEFS[activeType];
+  const apiType = TYPE_LIST.find((t) => t.key === activeType)!.apiType;
+  const mine = (docs || []).filter((d) => d.type === apiType);
+
+  function openDoc(d: SopDoc) {
+    setCurrentId(d.id);
+    setName(d.name);
+    setFields(d.fields || {});
+    setRows(d.rows || {});
+  }
+
+  async function newDoc() {
+    const res = await fetch(`/api/activations/${activation.id}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: apiType, name: `New ${def.docTitle}` }),
+    });
+    const data = await res.json();
+    if (!res.ok) return alert(data.error);
+    setDocs((prev) => [data.document, ...(prev || [])]);
+    openDoc(data.document);
+  }
+
+  async function save() {
+    if (!currentId) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/activations/${activation.id}/documents/${currentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, fields, rows }),
+      });
+      const data = await res.json();
+      if (res.ok) setDocs((prev) => (prev || []).map((d) => (d.id === currentId ? data.document : d)));
+      else alert(data.error || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeDoc(id: string) {
+    if (!confirm("Delete this document?")) return;
+    const res = await fetch(`/api/activations/${activation.id}/documents/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setDocs((prev) => (prev || []).filter((d) => d.id !== id));
+      if (currentId === id) setCurrentId(null);
+    }
+  }
+
+  async function doExport() {
+    if (!previewRef.current) return;
+    setExporting(true);
+    try {
+      await exportElementToPdf(previewRef.current, `${(name || def.docTitle).replace(/[^a-z0-9-]+/gi, "-")}.pdf`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const values: SopDocValues = { fields, rows };
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <div className="w-full shrink-0 lg:w-48">
+        <div className="flex flex-col gap-1">
+          {TYPE_LIST.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                setActiveType(t.key);
+                setCurrentId(null);
+              }}
+              className={`rounded px-2 py-1.5 text-left text-sm ${activeType === t.key ? "bg-[var(--hq-accent-soft)] font-medium text-[var(--hq-accent)]" : "text-[var(--hq-text-muted)] hover:bg-[var(--hq-card-border)]/30"}`}
+            >
+              {TEMPLATE_DEFS[t.key].listTitle}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        {currentId === null ? (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-[var(--hq-text)]">{def.listTitle}</h2>
+              <button onClick={newDoc} className="rounded bg-[var(--hq-accent)] px-3 py-1 text-xs text-white">
+                + New {def.docTitle}
+              </button>
+            </div>
+            {docs === null ? (
+              <p className="text-sm text-[var(--hq-text-muted)]">Loading…</p>
+            ) : mine.length === 0 ? (
+              <p className="text-sm text-[var(--hq-text-muted)]">No saved documents of this type yet. Click + New to start one.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {mine.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between rounded border border-[var(--hq-card-border)] p-2">
+                    <button onClick={() => openDoc(d)} className="text-left text-sm font-medium text-[var(--hq-text)]">
+                      {d.name || "Untitled"}
+                      <div className="text-xs text-[var(--hq-text-muted)]">updated {new Date(d.updatedAt).toLocaleDateString()}</div>
+                    </button>
+                    <button onClick={() => removeDoc(d.id)} className="text-xs text-[var(--hq-negative)]">
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 lg:flex-row">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex items-center gap-2">
+                <button onClick={() => setCurrentId(null)} className="text-xs text-[var(--hq-text-muted)]">
+                  ← Back to list
+                </button>
+              </div>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Document name"
+                className="mb-3 w-full rounded border border-[var(--hq-card-border)] px-2 py-1.5 text-sm font-medium"
+              />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {def.fields.map((fdef) => (
+                  <div key={fdef.key} className={fdef.full ? "sm:col-span-2" : ""}>
+                    <label className="mb-1 block text-xs text-[var(--hq-text-muted)]">{fdef.label}</label>
+                    {fdef.type === "textarea" ? (
+                      <textarea
+                        value={fields[fdef.key] || ""}
+                        placeholder={fdef.example}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [fdef.key]: e.target.value }))}
+                        rows={3}
+                        className="w-full rounded border border-[var(--hq-card-border)] p-2 text-sm"
+                      />
+                    ) : fdef.type === "select" ? (
+                      <select
+                        value={fields[fdef.key] || ""}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [fdef.key]: e.target.value }))}
+                        className="w-full rounded border border-[var(--hq-card-border)] px-2 py-1.5 text-sm"
+                      >
+                        <option value="">—</option>
+                        {(fdef.options || []).map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={fdef.type === "date" ? "date" : "text"}
+                        value={fields[fdef.key] || ""}
+                        placeholder={fdef.example}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [fdef.key]: e.target.value }))}
+                        className="w-full rounded border border-[var(--hq-card-border)] px-2 py-1.5 text-sm"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {(def.rowGroups || []).map((g) => (
+                <div key={g.key} className="mt-4">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[var(--hq-text-muted)]">{g.title}</span>
+                    <button
+                      onClick={() =>
+                        setRows((prev) => ({
+                          ...prev,
+                          [g.key]: [...(prev[g.key] || []), Object.fromEntries(g.columns.map((c) => [c.key, ""]))],
+                        }))
+                      }
+                      className="text-xs text-[var(--hq-accent)]"
+                    >
+                      + Row
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          {g.columns.map((c) => (
+                            <th key={c.key} className="px-1 py-1 text-left text-xs text-[var(--hq-text-muted)]">
+                              {c.label}
+                            </th>
+                          ))}
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(rows[g.key] || []).map((r, i) => (
+                          <tr key={i} className="border-b border-[var(--hq-card-border)]">
+                            {g.columns.map((c) => (
+                              <td key={c.key} className="px-1 py-1">
+                                <input
+                                  value={r[c.key] || ""}
+                                  onChange={(e) =>
+                                    setRows((prev) => ({
+                                      ...prev,
+                                      [g.key]: (prev[g.key] || []).map((row, idx) => (idx === i ? { ...row, [c.key]: e.target.value } : row)),
+                                    }))
+                                  }
+                                  className="w-full rounded border border-[var(--hq-card-border)] px-1 py-0.5"
+                                />
+                              </td>
+                            ))}
+                            <td>
+                              <button
+                                onClick={() => setRows((prev) => ({ ...prev, [g.key]: (prev[g.key] || []).filter((_, idx) => idx !== i) }))}
+                                className="px-1 text-xs text-[var(--hq-negative)]"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+
+              <div className="mt-4 flex gap-2">
+                <button onClick={save} disabled={saving} className="rounded bg-[var(--hq-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-50">
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button onClick={doExport} disabled={exporting} className="rounded border border-[var(--hq-card-border)] px-3 py-1.5 text-sm text-[var(--hq-text)] disabled:opacity-50">
+                  {exporting ? "Exporting…" : "Export PDF"}
+                </button>
+              </div>
+            </div>
+
+            <div className="min-w-0 lg:w-[380px]">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--hq-text-muted)]">Preview</div>
+              <div className="max-h-[70vh] overflow-auto rounded border border-[var(--hq-card-border)] bg-[var(--hq-canvas)] p-3">
+                <div ref={previewRef} dangerouslySetInnerHTML={{ __html: renderSopPaper(activeType, values) }} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
