@@ -1,0 +1,217 @@
+import { prisma } from "@/lib/prisma";
+import { encryptSecret, decryptSecret } from "@/lib/crypto";
+
+// Instagram API with Instagram Login ("Business Login for Instagram") —
+// since this only ever reads the one Instagram professional account you
+// own, it qualifies for Standard Access and needs no Meta App Review.
+// Set up a Meta Developer App with Instagram configured, then set
+// IG_APP_ID / IG_APP_SECRET / IG_REDIRECT_URI here (same shape as the
+// Gmail OAuth env vars).
+//
+// Token lifecycle: the initial code exchange gives a short-lived token,
+// immediately swapped for a long-lived one (~60 days). It has to be
+// refreshed before it expires — refreshInstagramTokenIfNeeded() below is
+// called from the background tick (see instrumentation.ts) and only
+// actually hits the API once the token is more than a day old and within
+// two weeks of expiring, per Meta's refresh rules.
+
+const GRAPH_VERSION = "v21.0";
+
+export function isInstagramConfigured() {
+  return Boolean(process.env.IG_APP_ID && process.env.IG_APP_SECRET && process.env.IG_REDIRECT_URI);
+}
+
+export function getInstagramAuthUrl(state: string) {
+  const appId = process.env.IG_APP_ID;
+  const redirectUri = process.env.IG_REDIRECT_URI;
+  if (!appId || !redirectUri) throw new Error("Instagram isn't configured yet.");
+  const scope = [
+    "instagram_business_basic",
+    "instagram_business_manage_insights",
+  ].join(",");
+  const params = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope,
+    state,
+  });
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+}
+
+// Exchanges the OAuth `code` for a short-lived token, then immediately
+// upgrades it to a long-lived one and looks up the account's own
+// id/username — everything the connect callback needs in one call.
+export async function exchangeInstagramCode(code: string) {
+  const appId = process.env.IG_APP_ID;
+  const appSecret = process.env.IG_APP_SECRET;
+  const redirectUri = process.env.IG_REDIRECT_URI;
+  if (!appId || !appSecret || !redirectUri) throw new Error("Instagram isn't configured yet.");
+
+  const form = new URLSearchParams({
+    client_id: appId,
+    client_secret: appSecret,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+    code,
+  });
+  const shortRes = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+  if (!shortRes.ok) throw new Error(`Instagram token exchange failed: ${await shortRes.text()}`);
+  const shortJson = await shortRes.json();
+  const shortToken = shortJson.access_token as string;
+  const igUserId = String(shortJson.user_id);
+
+  const longParams = new URLSearchParams({
+    grant_type: "ig_exchange_token",
+    client_secret: appSecret,
+    access_token: shortToken,
+  });
+  const longRes = await fetch(`https://graph.instagram.com/access_token?${longParams.toString()}`);
+  if (!longRes.ok) throw new Error(`Instagram long-lived token exchange failed: ${await longRes.text()}`);
+  const longJson = await longRes.json();
+  const accessToken = longJson.access_token as string;
+  const expiresAt = new Date(Date.now() + (longJson.expires_in || 5184000) * 1000); // default ~60 days
+
+  const meRes = await fetch(
+    `https://graph.instagram.com/${GRAPH_VERSION}/me?fields=user_id,username&access_token=${accessToken}`
+  );
+  const meJson = meRes.ok ? await meRes.json() : {};
+
+  return {
+    igUserId: String(meJson.user_id || igUserId),
+    username: (meJson.username as string) || null,
+    accessToken,
+    expiresAt,
+  };
+}
+
+async function getConnection() {
+  return prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+}
+
+// Meta's rule: a long-lived token can be refreshed for another ~60 days
+// once it's at least 24 hours old, any time before it expires. Called
+// every tick but only actually hits the network when it's genuinely due
+// (older than a day, and within two weeks of expiring) or after the
+// initial connect — cheap to call often.
+export async function refreshInstagramTokenIfNeeded() {
+  const conn = await getConnection();
+  if (!conn) return;
+
+  const now = Date.now();
+  const dayOld = now - conn.connectedAt.getTime() > 24 * 60 * 60 * 1000;
+  const lastRefreshOldEnough = !conn.lastRefreshAt || now - conn.lastRefreshAt.getTime() > 24 * 60 * 60 * 1000;
+  const withinRenewalWindow = conn.tokenExpiresAt.getTime() - now < 14 * 24 * 60 * 60 * 1000;
+  if (!dayOld || !lastRefreshOldEnough || !withinRenewalWindow) return;
+
+  try {
+    const accessToken = decryptSecret(conn.accessToken);
+    const res = await fetch(
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${accessToken}`
+    );
+    if (!res.ok) throw new Error(await res.text());
+    const json = await res.json();
+    await prisma.instagramConnection.update({
+      where: { id: conn.id },
+      data: {
+        accessToken: encryptSecret(json.access_token),
+        tokenExpiresAt: new Date(Date.now() + (json.expires_in || 5184000) * 1000),
+        lastRefreshAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("[instagram] token refresh failed:", err);
+  }
+}
+
+export type InstagramMedia = {
+  igMediaId: string;
+  permalink: string | null;
+  mediaType: string | null;
+  caption: string | null;
+  thumbnailUrl: string | null;
+  mediaUrl: string | null;
+  postedAt: Date | null;
+};
+
+// Pulls the account's media, newest first. `after` is a Graph API paging
+// cursor; omit it to start from the top. Capped per call by the caller
+// (see syncInstagramContent in content-performance.ts) rather than here.
+export async function fetchInstagramMedia(limit = 25): Promise<InstagramMedia[]> {
+  const conn = await getConnection();
+  if (!conn) throw new Error("Instagram isn't connected yet.");
+  const accessToken = decryptSecret(conn.accessToken);
+
+  const fields = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
+  const res = await fetch(
+    `https://graph.instagram.com/${GRAPH_VERSION}/me/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
+  );
+  if (!res.ok) throw new Error(`Instagram media fetch failed: ${await res.text()}`);
+  const json = await res.json();
+  const items: Array<Record<string, string>> = json.data || [];
+  return items.map((m) => ({
+    igMediaId: m.id,
+    permalink: m.permalink || null,
+    mediaType: m.media_type || null,
+    caption: m.caption || null,
+    thumbnailUrl: m.thumbnail_url || m.media_url || null,
+    mediaUrl: m.media_url || null,
+    postedAt: m.timestamp ? new Date(m.timestamp) : null,
+  }));
+}
+
+export type InstagramInsights = {
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+};
+
+// Video/Reels and image posts expose different insight metrics, and
+// asking for an unsupported one fails the WHOLE request — so this tries
+// the richer Reels metric set first and falls back to the plainer one
+// rather than giving up on metrics entirely for an older-style post.
+async function fetchMediaInsights(mediaId: string, accessToken: string): Promise<InstagramInsights> {
+  const metricSets = ["reach,likes,comments,shares,saved,plays", "reach,likes,comments,shares,saved"];
+  for (const metrics of metricSets) {
+    const res = await fetch(
+      `https://graph.instagram.com/${GRAPH_VERSION}/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`
+    );
+    if (!res.ok) continue;
+    const json = await res.json();
+    const data: Array<{ name: string; values?: { value: number }[]; total_value?: { value: number } }> = json.data || [];
+    const get = (name: string) => {
+      const row = data.find((d) => d.name === name);
+      return row?.total_value?.value ?? row?.values?.[0]?.value ?? null;
+    };
+    return {
+      views: get("plays") ?? get("reach"),
+      likes: get("likes"),
+      comments: get("comments"),
+      shares: get("shares"),
+      saves: get("saved"),
+    };
+  }
+  return { views: null, likes: null, comments: null, shares: null, saves: null };
+}
+
+export async function fetchInstagramInsightsFor(mediaId: string): Promise<InstagramInsights> {
+  const conn = await getConnection();
+  if (!conn) throw new Error("Instagram isn't connected yet.");
+  const accessToken = decryptSecret(conn.accessToken);
+  return fetchMediaInsights(mediaId, accessToken);
+}
+
+// Downloads the raw video bytes for a post so they can be handed to a
+// transcription service — mediaUrl is a signed, time-limited CDN link
+// Instagram returns alongside each media item, not something to store.
+export async function downloadInstagramVideo(mediaUrl: string): Promise<Buffer> {
+  const res = await fetch(mediaUrl);
+  if (!res.ok) throw new Error(`Failed to download Instagram media: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}

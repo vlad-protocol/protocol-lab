@@ -41,6 +41,35 @@ export async function getOrSeedCategories(userId: string) {
   return categories;
 }
 
+export function currentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Applies any one-off budget overrides for the given month on top of each
+// category's normal (default) budget. A month with no override rows comes
+// back identical to the defaults — that's what makes "next month put it
+// back to normal" automatic: there's nothing to revert, since the override
+// only ever applied to the one month it was created for.
+export async function getEffectiveCategories(userId: string, yearMonth?: string) {
+  const month = yearMonth || currentYearMonth();
+  const [categories, overrides] = await Promise.all([
+    getOrSeedCategories(userId),
+    prisma.cFOBudgetOverride.findMany({ where: { userId, yearMonth: month } }),
+  ]);
+  const overrideByKey = new Map(overrides.map((o) => [o.categoryKey, o.monthlyBudget]));
+  return categories.map((c) => {
+    const override = overrideByKey.get(c.key);
+    return {
+      ...c,
+      monthlyBudget: override !== undefined ? override : c.monthlyBudget,
+      defaultBudget: c.monthlyBudget,
+      isOverridden: override !== undefined,
+      month,
+    };
+  });
+}
+
 // Consolidates a user's existing (legacy, fine-grained) categories down to
 // the 8 canonical ones in CATEGORY_MERGE_MAP, reassigning every transaction,
 // merchant rule, and recurring bill that referenced a merged-away key, and

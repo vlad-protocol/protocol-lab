@@ -49,7 +49,7 @@ export function OverviewTab({
   transactions: Transaction[];
   month: string; // "YYYY-MM"
   onCategoryChange: (id: string, category: string) => void;
-  onBudgetChange: (id: string, monthlyBudget: number) => void;
+  onBudgetChange: (id: string, patch: Partial<Category>) => void;
 }) {
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -116,24 +116,52 @@ export function OverviewTab({
     if (res.ok) onCategoryChange(id, category);
   }
 
-  async function saveBudget(id: string, monthlyBudget: number) {
+  // Editing the number in Overview always scopes to the month currently
+  // being viewed (a one-off override) — it never silently changes the
+  // recurring default, so switching months (or waiting for next month)
+  // reverts on its own with nothing left to clean up.
+  async function saveBudget(id: string, monthlyBudget: number, defaultBudget?: number) {
     setSavingId(id);
-    const res = await fetch(`/api/cfo/categories/${id}`, {
-      method: "PATCH",
+    const res = await fetch(`/api/cfo/categories/${id}/override`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ monthlyBudget }),
+      body: JSON.stringify({ month, monthlyBudget }),
     });
     setSavingId(null);
-    if (res.ok) onBudgetChange(id, monthlyBudget);
+    if (res.ok) {
+      onBudgetChange(id, {
+        monthlyBudget,
+        isOverridden: defaultBudget === undefined ? monthlyBudget !== 0 : monthlyBudget !== defaultBudget,
+        defaultBudget,
+      });
+    }
   }
 
+  async function resetToDefault(cat: Category) {
+    setSavingId(cat.id);
+    const res = await fetch(`/api/cfo/categories/${cat.id}/override?month=${month}`, { method: "DELETE" });
+    setSavingId(null);
+    if (res.ok && cat.defaultBudget !== undefined) {
+      onBudgetChange(cat.id, { monthlyBudget: cat.defaultBudget, isOverridden: false });
+    }
+  }
+
+  // "Apply this budget" is meant to set the new ongoing normal, not just
+  // this month, so it writes the permanent default directly.
   async function applyRecommendedBudget() {
     setApplyingPlan(true);
     for (const cat of categories) {
       const target = RAMIT_BUDGET_PLAN.categoryBudgets[cat.key];
       if (target === undefined) continue;
-      await saveBudget(cat.id, target);
+      setSavingId(cat.id);
+      const res = await fetch(`/api/cfo/categories/${cat.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyBudget: target }),
+      });
+      if (res.ok) onBudgetChange(cat.id, { monthlyBudget: target, defaultBudget: target, isOverridden: false });
     }
+    setSavingId(null);
     setApplyingPlan(false);
     setShowPlanNotes(true);
   }
@@ -258,7 +286,7 @@ export function OverviewTab({
                           delete rest[cat.id];
                           return rest;
                         });
-                        if (next !== cat.monthlyBudget) saveBudget(cat.id, next);
+                        if (next !== cat.monthlyBudget) saveBudget(cat.id, next, cat.defaultBudget);
                       }}
                       className="w-16 rounded border border-[var(--hq-card-border)] bg-white px-1 py-0.5 text-right text-xs"
                     />
@@ -266,6 +294,20 @@ export function OverviewTab({
                   {savingId === cat.id && <span>saving…</span>}
                 </div>
               </div>
+              {cat.isOverridden && (
+                <div
+                  className="flex items-center gap-1.5 border-t border-[var(--hq-card-border)] bg-amber-50 px-3 py-1 text-[11px] text-amber-800"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span>
+                    Changed for {new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, { month: "long" })}{" "}
+                    only — normal budget is {money(cat.defaultBudget ?? 0)}.
+                  </span>
+                  <button onClick={() => resetToDefault(cat)} className="font-medium underline hover:no-underline">
+                    Reset now
+                  </button>
+                </div>
+              )}
               {isOpen && (
                 <div className="border-t border-[var(--hq-card-border)] px-3 py-2">
                   {catTransactions.length === 0 ? (

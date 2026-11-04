@@ -76,11 +76,13 @@ model User {
   cfoRecurringBills       CFORecurringBill[]
   cfoGoals                CFOGoal[]
   cfoDebts                CFODebt[]
+  cfoBudgetOverrides      CFOBudgetOverride[]
   emailCampaigns          EmailCampaign[]
   smsCampaigns            SmsCampaign[]
   protocolListMembers     ProtocolListMember[]
   uploadedImages          UploadedImage[]
   confirmedSequenceDrafts SequenceStepDraft[]
+  marketingEvents         MarketingEvent[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -871,6 +873,26 @@ model CFODebt {
   updatedAt      DateTime @updatedAt
 }
 
+// A one-off override of a category's budget for a single calendar month —
+// e.g. "no rent this month, put it toward bills instead." Keyed by month,
+// so it applies only while that month is being viewed/edited and needs no
+// cron or cleanup job to "revert": next month there's simply no override
+// row for that key, and the category's normal CFOBudgetCategory.monthlyBudget
+// takes over automatically.
+model CFOBudgetOverride {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryKey   String // matches CFOBudgetCategory.key
+  yearMonth     String // "YYYY-MM"
+  monthlyBudget Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, categoryKey, yearMonth])
+  @@index([userId, yearMonth])
+}
+
 // Protocol CRM's sponsor/venue pipeline (formerly its own ProtocolLead
 // model + separate "People" CRM) now lives entirely on Contact above —
 // see the ContactType/LeadStatus/LeadPriority enums and the `type` field.
@@ -1058,6 +1080,132 @@ model ProtocolListMember {
 
   @@index([email])
   @@index([phone])
+}
+
+// --- Content Performance: does what you post sell tickets? --------------
+//
+// Answers "what kind of content sells my events": every Reel pulled from
+// Instagram (media + insights, auto-synced) gets transcribed and
+// AI-categorized, then linked to whichever event(s) it was promoting.
+// Ticket/RSVP numbers come in per event — Zeffy auto-syncs via its API
+// (see lib/integrations/zeffy.ts), Partiful is entered by hand since it
+// has no public API, only a manual guest-list export. The Performance tab
+// then reads posts + events together to say which content style actually
+// correlates with sales, not just which got the most views.
+
+enum EventPricing {
+  PAID
+  FREE
+}
+
+enum TicketingPlatform {
+  ZEFFY
+  PARTIFUL
+}
+
+model MarketingEvent {
+  id        String            @id @default(cuid())
+  name      String
+  eventDate DateTime
+  pricing   EventPricing
+  platform  TicketingPlatform
+
+  // Zeffy side (auto-synced — see lib/integrations/zeffy.ts /
+  // syncZeffySales in lib/content-performance.ts). zeffyCampaignId links
+  // this event to one of your Zeffy campaigns; tickets/revenue are kept
+  // as a mirror of Zeffy's numbers, refreshed on every sync, not the
+  // source of truth themselves.
+  zeffyCampaignId String?
+  ticketsSold     Int?
+  revenue         Float?
+
+  // Partiful side — no API, so this is typed in by hand from the guest
+  // list Partiful lets you export.
+  rsvpCount Int?
+
+  notes String?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts InstagramPost[]
+
+  @@index([eventDate])
+}
+
+enum TranscriptStatus {
+  PENDING // just synced, not processed yet
+  PROCESSING
+  DONE
+  FAILED
+  SKIPPED // not a video (image/carousel of stills) — nothing to transcribe
+}
+
+// One row per Reel/post pulled from your connected Instagram account.
+// Populated by syncInstagramContent() in lib/content-performance.ts;
+// views/likes/comments/shares are refreshed for recent posts on every
+// sync since engagement keeps climbing for a while after posting.
+model InstagramPost {
+  id        String  @id @default(cuid())
+  igMediaId String  @unique
+  permalink String?
+  mediaType String? // VIDEO | REELS | CAROUSEL_ALBUM | IMAGE, as reported by the Graph API
+  caption   String?
+
+  transcript       String?
+  transcriptStatus TranscriptStatus @default(PENDING)
+  transcriptError  String?
+
+  // AI read of the transcript+caption — a short label (e.g.
+  // "documentation/behind-the-scenes", "hype/promo", "educational",
+  // "testimonial", "event recap") plus a sentence on why, set by
+  // categorizePendingPosts() in lib/content-performance.ts.
+  contentCategory   String?
+  categoryReasoning String?
+
+  thumbnailUrl String?
+  postedAt     DateTime?
+
+  views    Int?
+  likes    Int?
+  comments Int?
+  shares   Int?
+  saves    Int?
+
+  lastMetricsSyncAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  events MarketingEvent[]
+
+  @@index([postedAt])
+  @@index([transcriptStatus])
+}
+
+// Long-lived Instagram access token for the one connected professional
+// account (Business Login for Instagram — Standard Access, since this
+// only ever reads your own account, no Meta App Review needed). Tokens
+// last ~60 days and must be refreshed before they expire; see
+// refreshInstagramTokenIfNeeded() in lib/integrations/instagram.ts.
+model InstagramConnection {
+  id             String    @id @default(cuid())
+  igUserId       String
+  username       String?
+  accessToken    String // encrypted at rest, see src/lib/crypto.ts
+  tokenExpiresAt DateTime
+  lastRefreshAt  DateTime?
+  connectedAt    DateTime  @default(now())
+}
+
+// Zeffy has no OAuth flow — just a bearer API key generated from their
+// dashboard (Settings → Integrations). One key for the whole account,
+// same pattern as TwilioConnection.
+model ZeffyConnection {
+  id          String   @id @default(cuid())
+  apiKey      String // encrypted at rest
+  connectedAt DateTime @default(now())
 }
 
 // Images uploaded through the campaign email block editor. Stored as raw

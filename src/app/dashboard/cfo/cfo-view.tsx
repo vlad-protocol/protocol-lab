@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LayoutGrid, PlusCircle, History, CalendarDays, Target, MessageCircle } from "lucide-react";
 import type { Bill, Category, Debt, Goal, Transaction } from "./types";
 import { OverviewTab } from "./overview-tab";
@@ -46,6 +46,22 @@ export function CFOView({
   const [goals, setGoals] = useState(initialGoals);
   const [debts, setDebts] = useState(initialDebts);
   const [month, setMonth] = useState(currentMonthKey());
+
+  // Budgets can carry a one-off override for the viewed month (see
+  // CFOBudgetOverride), so switching months re-fetches the effective
+  // budget for each category rather than reusing the initial server load.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/cfo/categories?month=${month}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.categories) setCategories(data.categories);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
 
   const monthOptions = Array.from(new Set(transactions.map((t) => t.date.slice(0, 7))));
   if (!monthOptions.includes(currentMonthKey())) monthOptions.push(currentMonthKey());
@@ -100,8 +116,8 @@ export function CFOView({
             onCategoryChange={(id, category) =>
               setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, category } : t)))
             }
-            onBudgetChange={(id, monthlyBudget) =>
-              setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, monthlyBudget } : c)))
+            onBudgetChange={(id, patch) =>
+              setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
             }
           />
         )}

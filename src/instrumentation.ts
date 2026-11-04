@@ -10,6 +10,7 @@
 
 const AUTO_RUN_INTERVAL_MS = 2 * 60 * 1000; // check every 2 minutes (was 15 — sequence drafts in particular felt slow)
 const AUTO_RUN_MIN_GAP_MS = 15 * 60 * 1000; // still don't re-fire the same AUTOMATION inside 15 minutes; unrelated to the interval above
+const CONTENT_SYNC_MIN_GAP_MS = 30 * 60 * 1000; // Instagram/Zeffy syncs are heavier API calls — every 30 min, not every tick
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -21,6 +22,11 @@ export async function register() {
   const { runDueSequenceSteps } = await import("@/lib/sequences");
   const { runDueSequenceDraftGeneration } = await import("@/lib/sequence-drafts");
   const { runDueEmailCampaignSends, runDueSmsCampaignSends } = await import("@/lib/campaigns");
+  const { syncInstagramContent, transcribePendingPosts, categorizePendingPosts, syncZeffySales } = await import(
+    "@/lib/content-performance"
+  );
+
+  let lastContentSyncAt = 0;
 
   const tick = async () => {
     try {
@@ -86,6 +92,47 @@ export async function register() {
       }
     } catch (err) {
       console.error("[campaigns] sms background run failed:", err);
+    }
+
+    // Content Performance: pulling Instagram media + Zeffy sales is a
+    // heavier external call than the rest of this tick, so it's gated to
+    // once every 30 minutes rather than every 2. Transcription and
+    // categorization run every tick but in small batches (see their
+    // default batch sizes in lib/content-performance.ts) since each one
+    // costs real money per item — no reason to wait 30 minutes for those
+    // once a post is already synced.
+    if (Date.now() - lastContentSyncAt > CONTENT_SYNC_MIN_GAP_MS) {
+      lastContentSyncAt = Date.now();
+      try {
+        const igResults = await syncInstagramContent();
+        if (igResults.length > 0) console.log(`[performance] synced ${igResults.length} Instagram posts`);
+      } catch (err) {
+        console.error("[performance] Instagram sync failed (not connected yet?):", err);
+      }
+      try {
+        const zeffyResults = await syncZeffySales();
+        if (zeffyResults.length > 0) console.log(`[performance] synced Zeffy totals for ${zeffyResults.length} events`);
+      } catch (err) {
+        console.error("[performance] Zeffy sync failed:", err);
+      }
+    }
+
+    try {
+      const transcribed = await transcribePendingPosts();
+      if (transcribed.length > 0) {
+        console.log(`[performance] transcribed ${transcribed.filter((r) => !r.error).length}/${transcribed.length} reels`);
+      }
+    } catch (err) {
+      console.error("[performance] transcription background run failed:", err);
+    }
+
+    try {
+      const categorized = await categorizePendingPosts();
+      if (categorized.length > 0) {
+        console.log(`[performance] categorized ${categorized.filter((r) => !r.error).length}/${categorized.length} reels`);
+      }
+    } catch (err) {
+      console.error("[performance] categorization background run failed:", err);
     }
   };
 

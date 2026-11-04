@@ -21,6 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
       { href: "/dashboard/content", label: "Trial Reels", icon: "Flame", module: "content" },
       { href: "/dashboard/analytics", label: "Analytics", icon: "BarChart2", module: "analytics" },
+      { href: "/dashboard/performance", label: "Content Performance", icon: "TrendingUp", module: "content_performance" },
       { href: "/dashboard/ads", label: "Ads", icon: "Megaphone", module: "ads" },
     ],
   },

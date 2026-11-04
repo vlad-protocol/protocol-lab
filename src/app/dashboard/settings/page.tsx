@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { TwilioConnectCard } from "./twilio-connect-card";
 import { EmailSignatureCard } from "./email-signature-card";
+import { InstagramConnectCard } from "./instagram-connect-card";
+import { ZeffyConnectCard } from "./zeffy-connect-card";
+import { isInstagramConfigured } from "@/lib/integrations/instagram";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +16,8 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   const twilio = await prisma.twilioConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+  const instagram = await prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+  const zeffy = await prisma.zeffyConnection.findFirst({ orderBy: { connectedAt: "desc" } });
   const signature = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: {
@@ -59,6 +64,23 @@ export default async function SettingsPage() {
             other party, some require their explicit consent before you record. Confirm
             what applies to where you and your contacts are before relying on this.
           </p>
+
+          <p className="mt-6 text-[10px] font-semibold uppercase tracking-wider text-[var(--hq-text-muted)]">
+            Content Performance
+          </p>
+          <p className="mt-1 text-xs text-[var(--hq-text-muted)]">
+            Instagram feeds the{" "}
+            <Link href="/dashboard/performance" className="text-[var(--hq-accent)] hover:underline">
+              Content Performance
+            </Link>{" "}
+            tab with your Reels; Zeffy feeds it ticket sales.
+          </p>
+          <InstagramConnectCard
+            configured={isInstagramConfigured()}
+            connected={!!instagram}
+            username={instagram?.username || null}
+          />
+          <ZeffyConnectCard connected={!!zeffy} />
 
           <div className="mt-6 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
             <p className="text-sm font-medium text-[var(--hq-text)]">Gmail (per teammate)</p>

@@ -4,6 +4,12 @@ export type Category = {
   label: string;
   monthlyBudget: number;
   order: number;
+  // Present when a category's budget has been fetched for a specific month
+  // (see getEffectiveCategories): defaultBudget is the normal recurring
+  // value, monthlyBudget reflects that month's one-off override if any.
+  defaultBudget?: number;
+  isOverridden?: boolean;
+  month?: string;
 };
 
 export type Transaction = {

@@ -1,7 +1,7 @@
 import { PiggyBank } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireAccess } from "@/lib/require-access";
-import { getOrSeedCategories } from "@/lib/cfo-server";
+import { getEffectiveCategories } from "@/lib/cfo-server";
 import { CFOView } from "./cfo-view";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export default async function CFOPage() {
   const userId = session.user.id;
 
   const [categories, transactions, bills, goals, debts] = await Promise.all([
-    getOrSeedCategories(userId),
+    getEffectiveCategories(userId),
     prisma.cFOTransaction.findMany({ where: { userId }, orderBy: { date: "desc" } }),
     prisma.cFORecurringBill.findMany({ where: { userId }, orderBy: { dayOfMonth: "asc" } }),
     prisma.cFOGoal.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),

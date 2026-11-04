@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
-import { getOrSeedCategories } from "@/lib/cfo-server";
+import { getEffectiveCategories } from "@/lib/cfo-server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user || !canAccess(session.user, "cfo")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const categories = await getOrSeedCategories(session.user.id);
+  const month = new URL(req.url).searchParams.get("month") || undefined;
+  const categories = await getEffectiveCategories(session.user.id, month);
   return NextResponse.json({ categories });
 }
 
