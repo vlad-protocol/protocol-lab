@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { ACTIVATION_TIMELINE_TEMPLATE, computeStepDates } from "@/lib/activation-timeline";
+import { seedContentAssets } from "@/lib/activation-content-assets";
 
 export async function GET() {
   const session = await auth();
@@ -51,10 +52,12 @@ export async function POST(req: Request) {
       eventName: body.eventName,
       eventDate,
       mainSponsorCategory: contact.industry || null,
+      contentAssets: seedContentAssets() as object,
       createdById: session.user.id,
       steps: {
         create: ACTIVATION_TIMELINE_TEMPLATE.map((s) => ({
           stepNumber: s.stepNumber,
+          phase: s.phase,
           title: s.title,
           owner: s.owner,
           doneWhen: s.doneWhen,

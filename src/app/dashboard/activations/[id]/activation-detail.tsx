@@ -4,8 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { ACTIVATION_RULES, type ActivationRuleField } from "@/lib/activation-rules";
 import { COST_SHEET_CATALOGUE, calcActivationTotals, type CostLineItem, type PackageTier } from "@/lib/activation-cost-sheet";
 import { TEMPLATE_DEFS, renderSopPaper, type SopDocType, type SopDocValues } from "@/lib/sop-templates";
+import { PHASE_LABELS } from "@/lib/activation-timeline";
+import { CONTENT_ASSET_TEMPLATE } from "@/lib/activation-content-assets";
 
-type Step = { id: string; stepNumber: number; title: string; owner: string; dueDate: string | null; doneWhen: string; done: boolean };
+type Step = { id: string; stepNumber: number; phase?: string; title: string; owner: string; dueDate: string | null; doneWhen: string; done: boolean };
+type ContentAssetRow = { key: string; label: string; who: string; deliveredWithin: string; done: boolean; link: string };
 type Sponsor = { id: string; category: string; brandName: string | null; tier: string | null; fee: number | null; confirmed: boolean };
 type Payment = { id: string; label: string; amount: number; dueDate: string | null; status: string };
 
@@ -23,6 +26,20 @@ type ActivationData = {
   reportDraft: string | null;
   gate1PassedAt: string | null;
   gate2PassedAt: string | null;
+  attendanceTarget: number | null;
+  attendanceActual: number | null;
+  rsvpCount: number | null;
+  productsTriedCount: number | null;
+  optInCount: number | null;
+  dayOfConversions: number | null;
+  revenueReported: number | null;
+  totalImpressions: number | null;
+  contentCpm: number | null;
+  referralCount: number | null;
+  npsScore: number | null;
+  offerCode: string | null;
+  reportNextStep: string | null;
+  contentAssets: ContentAssetRow[];
   contact: { companyName: string | null; contactName: string };
   steps: Step[];
   sponsors: Sponsor[];
@@ -30,7 +47,7 @@ type ActivationData = {
   [key: string]: unknown;
 };
 
-type Tab = "timeline" | "rules" | "cost" | "sponsors" | "payments" | "docs" | "templates";
+type Tab = "timeline" | "rules" | "cost" | "sponsors" | "payments" | "docs" | "templates" | "recap";
 
 export function ActivationDetail({ activation }: { activation: ActivationData }) {
   const [tab, setTab] = useState<Tab>("timeline");
@@ -59,6 +76,7 @@ export function ActivationDetail({ activation }: { activation: ActivationData })
           ["payments", "Payments"],
           ["docs", "AI Drafts"],
           ["templates", "Templates & PDF"],
+          ["recap", "Recap & Metrics"],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
@@ -78,6 +96,7 @@ export function ActivationDetail({ activation }: { activation: ActivationData })
         {tab === "payments" && <PaymentsTab activation={a} setActivation={setA} />}
         {tab === "docs" && <DocsTab activation={a} setActivation={setA} />}
         {tab === "templates" && <TemplatesTab activation={a} />}
+        {tab === "recap" && <RecapTab activation={a} setActivation={setA} patchActivation={patchActivation} />}
       </div>
     </div>
   );
@@ -118,24 +137,59 @@ function TimelineTab({ activation, setActivation }: { activation: ActivationData
         />
         <span className="text-xs">(changing this recomputes every step's due date)</span>
       </label>
-      <ol className="flex flex-col gap-2">
-        {activation.steps.map((s) => (
-          <li key={s.id} className="flex items-start gap-3 rounded border border-[var(--hq-card-border)] p-3">
-            <input type="checkbox" checked={s.done} onChange={() => toggleDone(s)} className="mt-1" />
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <span className={`text-sm font-medium ${s.done ? "text-[var(--hq-text-muted)] line-through" : "text-[var(--hq-text)]"}`}>
-                  {s.stepNumber} · {s.title}
-                </span>
-                <span className="text-xs text-[var(--hq-text-muted)]">
-                  {s.owner} {s.dueDate ? `· ${new Date(s.dueDate).toLocaleDateString()}` : ""}
-                </span>
-              </div>
-              <div className="text-xs text-[var(--hq-text-muted)]">Done when: {s.doneWhen}</div>
+      {(["A", "B", "C", "D", "E"] as const).map((phase) => {
+        const phaseSteps = activation.steps.filter((s) => (s.phase || "") === phase);
+        if (phaseSteps.length === 0) return null;
+        const done = phaseSteps.filter((s) => s.done).length;
+        return (
+          <div key={phase} className="mb-5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--hq-accent)]">{PHASE_LABELS[phase]}</span>
+              <span className="text-xs text-[var(--hq-text-muted)]">
+                {done}/{phaseSteps.length} done
+              </span>
             </div>
-          </li>
-        ))}
-      </ol>
+            <ol className="flex flex-col gap-2">
+              {phaseSteps.map((s) => (
+                <li key={s.id} className="flex items-start gap-3 rounded border border-[var(--hq-card-border)] p-3">
+                  <input type="checkbox" checked={s.done} onChange={() => toggleDone(s)} className="mt-1" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-medium ${s.done ? "text-[var(--hq-text-muted)] line-through" : "text-[var(--hq-text)]"}`}>
+                        {s.stepNumber} · {s.title}
+                      </span>
+                      <span className="text-xs text-[var(--hq-text-muted)]">
+                        {s.owner} {s.dueDate ? `· ${new Date(s.dueDate).toLocaleDateString()}` : ""}
+                      </span>
+                    </div>
+                    <div className="text-xs text-[var(--hq-text-muted)]">Done when: {s.doneWhen}</div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        );
+      })}
+      {activation.steps.every((s) => !s.phase) && (
+        <ol className="flex flex-col gap-2">
+          {activation.steps.map((s) => (
+            <li key={s.id} className="flex items-start gap-3 rounded border border-[var(--hq-card-border)] p-3">
+              <input type="checkbox" checked={s.done} onChange={() => toggleDone(s)} className="mt-1" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm font-medium ${s.done ? "text-[var(--hq-text-muted)] line-through" : "text-[var(--hq-text)]"}`}>
+                    {s.stepNumber} · {s.title}
+                  </span>
+                  <span className="text-xs text-[var(--hq-text-muted)]">
+                    {s.owner} {s.dueDate ? `· ${new Date(s.dueDate).toLocaleDateString()}` : ""}
+                  </span>
+                </div>
+                <div className="text-xs text-[var(--hq-text-muted)]">Done when: {s.doneWhen}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -771,6 +825,123 @@ function TemplatesTab({ activation }: { activation: ActivationData }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function NumField({ label, value, onCommit }: { label: string; value: number | null; onCommit: (v: number | null) => void }) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-[var(--hq-text-muted)]">
+      {label}
+      <input
+        type="number"
+        defaultValue={value ?? ""}
+        onBlur={(e) => onCommit(e.target.value === "" ? null : Number(e.target.value))}
+        className="w-full rounded border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text)]"
+      />
+    </label>
+  );
+}
+
+function fmtRate(n: number, d: number): string {
+  if (!d) return "—";
+  return `${((n / d) * 100).toFixed(0)}%`;
+}
+function fmtMoney(n: number, d: number): string {
+  if (!d) return "—";
+  return `$${(n / d).toFixed(0)}`;
+}
+
+// Raw inputs + the Activation Playbook's recap formulas (show-up rate,
+// trial rate, opt-in rate, cost per lead/trial, content value), plus the
+// content-asset delivery checklist. Brand fee = quoteTotal (cost sheet).
+function RecapTab({ activation, setActivation, patchActivation }: { activation: ActivationData; setActivation: (fn: (a: ActivationData) => ActivationData) => void; patchActivation: (body: Record<string, unknown>) => void }) {
+  const assets: ContentAssetRow[] = activation.contentAssets && activation.contentAssets.length > 0 ? activation.contentAssets : CONTENT_ASSET_TEMPLATE.map((a) => ({ ...a, done: false, link: "" }));
+
+  async function saveAssets(next: ContentAssetRow[]) {
+    setActivation((prev) => ({ ...prev, contentAssets: next }));
+    const res = await fetch(`/api/activations/${activation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contentAssets: next }),
+    });
+    const data = await res.json();
+    if (res.ok) setActivation(() => data.activation);
+  }
+
+  const rsvp = activation.rsvpCount || 0;
+  const checkins = activation.attendanceActual || 0;
+  const trials = activation.productsTriedCount || 0;
+  const optins = activation.optInCount || 0;
+  const fee = activation.quoteTotal || 0;
+  const impressions = activation.totalImpressions || 0;
+  const cpm = activation.contentCpm || 0;
+
+  return (
+    <div>
+      <div className="mb-6">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--hq-accent)]">Raw numbers</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <NumField label="RSVPs" value={activation.rsvpCount} onCommit={(v) => patchActivation({ rsvpCount: v })} />
+          <NumField label="Check-ins (actual)" value={activation.attendanceActual} onCommit={(v) => patchActivation({ attendanceActual: v })} />
+          <NumField label="Target attendance" value={activation.attendanceTarget} onCommit={(v) => patchActivation({ attendanceTarget: v })} />
+          <NumField label="Products tried / samples" value={activation.productsTriedCount} onCommit={(v) => patchActivation({ productsTriedCount: v })} />
+          <NumField label="Consented opt-ins" value={activation.optInCount} onCommit={(v) => patchActivation({ optInCount: v })} />
+          <NumField label="Day-of conversions" value={activation.dayOfConversions} onCommit={(v) => patchActivation({ dayOfConversions: v })} />
+          <NumField label="Revenue (day-of + offer week)" value={activation.revenueReported} onCommit={(v) => patchActivation({ revenueReported: v })} />
+          <NumField label="Total content impressions" value={activation.totalImpressions} onCommit={(v) => patchActivation({ totalImpressions: v })} />
+          <NumField label="Agreed content CPM ($)" value={activation.contentCpm} onCommit={(v) => patchActivation({ contentCpm: v })} />
+          <NumField label="Referrals" value={activation.referralCount} onCommit={(v) => patchActivation({ referralCount: v })} />
+          <NumField label="NPS (% 9-10 minus % 0-6)" value={activation.npsScore} onCommit={(v) => patchActivation({ npsScore: v })} />
+        </div>
+        <label className="mt-3 flex max-w-xs flex-col gap-1 text-xs text-[var(--hq-text-muted)]">
+          Offer code (this event only)
+          <input
+            defaultValue={activation.offerCode || ""}
+            onBlur={(e) => patchActivation({ offerCode: e.target.value })}
+            className="w-full rounded border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text)]"
+          />
+        </label>
+      </div>
+
+      <div className="mb-6 rounded border border-[var(--hq-accent)] bg-[var(--hq-accent-soft)] p-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--hq-accent)]">Computed (same formulas every time)</div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+          <div>Show-up rate: <b>{fmtRate(checkins, rsvp)}</b></div>
+          <div>Trial rate: <b>{fmtRate(trials, checkins)}</b></div>
+          <div>Opt-in rate: <b>{fmtRate(optins, checkins)}</b></div>
+          <div>Cost per lead: <b>{fmtMoney(fee, optins)}</b></div>
+          <div>Cost per trial: <b>{fmtMoney(fee, trials)}</b></div>
+          <div>Content value: <b>{impressions && cpm ? `$${((impressions / 1000) * cpm).toFixed(0)}` : "—"}</b></div>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--hq-accent)]">Content asset checklist</div>
+        <div className="flex flex-col gap-2">
+          {assets.map((a, i) => (
+            <div key={a.key} className="flex flex-wrap items-center gap-2 rounded border border-[var(--hq-card-border)] p-2">
+              <input
+                type="checkbox"
+                checked={a.done}
+                onChange={(e) => saveAssets(assets.map((row, idx) => (idx === i ? { ...row, done: e.target.checked } : row)))}
+              />
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm ${a.done ? "text-[var(--hq-text-muted)] line-through" : "text-[var(--hq-text)]"}`}>{a.label}</div>
+                <div className="text-xs text-[var(--hq-text-muted)]">
+                  {a.who} · within {a.deliveredWithin}
+                </div>
+              </div>
+              <input
+                placeholder="Link"
+                defaultValue={a.link}
+                onBlur={(e) => saveAssets(assets.map((row, idx) => (idx === i ? { ...row, link: e.target.value } : row)))}
+                className="w-40 rounded border border-[var(--hq-card-border)] px-2 py-1 text-xs"
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

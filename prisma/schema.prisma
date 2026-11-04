@@ -1252,11 +1252,12 @@ model ActivationStep {
   id           String     @id @default(cuid())
   activationId String
   activation   Activation @relation(fields: [activationId], references: [id], onDelete: Cascade)
-  stepNumber   Int // 1-17, SOP Section 03 order
+  stepNumber   Int // 1-18, Activation Playbook phase order (A-E)
+  phase        String     @default("") // "A".."E", see activation-timeline.ts PHASE_LABELS
   title        String
   owner        String
   dueDate      DateTime?
-  doneWhen     String // the SOP's "done when" column, shown as a hint
+  doneWhen     String // the playbook's "done when" column, shown as a hint
   done         Boolean    @default(false)
   doneAt       DateTime?
 
@@ -1354,15 +1355,27 @@ model Activation {
   contractDraft String?
   reportDraft   String?
 
-  // Post-event report scorecard (SOP Section 04, Page 1)
-  attendanceTarget Int?
-  attendanceActual Int?
-  dayOfConversions Int?
-  revenueReported  Float?
-  totalImpressions Int?
-  referralCount    Int?
-  npsScore         Int?
-  reportNextStep   String?
+  // Post-event report scorecard (Playbook "Measurement and the recap
+  // report" — attendanceActual doubles as check-ins for the show-up-rate
+  // formula; quoteTotal is the brand fee used in cost-per-lead/trial).
+  attendanceTarget   Int?
+  attendanceActual   Int?
+  rsvpCount          Int? // for show-up rate = attendanceActual / rsvpCount
+  productsTriedCount Int? // for trial rate = productsTriedCount / attendanceActual
+  optInCount         Int? // consented opt-ins, for opt-in rate & cost per lead
+  dayOfConversions   Int?
+  revenueReported    Float?
+  totalImpressions   Int?
+  contentCpm         Float? // brand-agreed CPM, for content value = impressions/1000 x cpm
+  referralCount      Int?
+  npsScore           Int? // % rating 9-10 minus % rating 0-6
+  offerCode          String? // this event's unique offer code, for provable redemptions
+  reportNextStep     String?
+
+  // Content asset checklist (Playbook "Content and shareability engine")
+  // — [{ key, label, who, deliveredWithin, done, link }], seeded from
+  // CONTENT_ASSET_TEMPLATE at creation — see activation-content-assets.ts.
+  contentAssets Json @default("[]")
 
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)

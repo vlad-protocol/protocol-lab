@@ -39,6 +39,7 @@ const STRING_FIELDS = [
   "rule9Trigger",
   "rule10CloseLoop",
   "reportNextStep",
+  "offerCode",
 ] as const;
 const NUMBER_FIELDS = [
   "clientMultiplier",
@@ -49,6 +50,10 @@ const NUMBER_FIELDS = [
   "totalImpressions",
   "referralCount",
   "npsScore",
+  "rsvpCount",
+  "productsTriedCount",
+  "optInCount",
+  "contentCpm",
 ] as const;
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -74,6 +79,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (body.packageTier === "BRONZE" || body.packageTier === "SILVER" || body.packageTier === "GOLD") {
     data.packageTier = body.packageTier;
+  }
+
+  if (Array.isArray(body.contentAssets)) {
+    data.contentAssets = body.contentAssets as object;
   }
 
   let eventDateChanged = false;

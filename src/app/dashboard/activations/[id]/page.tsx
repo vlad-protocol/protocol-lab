@@ -36,6 +36,7 @@ export default async function ActivationDetailPage({ params }: { params: Promise
           createdAt: activation.createdAt.toISOString(),
           updatedAt: activation.updatedAt.toISOString(),
           costLineItems: activation.costLineItems as unknown,
+          contentAssets: (activation.contentAssets as never) || [],
           steps: activation.steps.map((s) => ({ ...s, dueDate: s.dueDate ? s.dueDate.toISOString() : null })),
           payments: activation.payments.map((p) => ({ ...p, dueDate: p.dueDate ? p.dueDate.toISOString() : null })),
         }}
