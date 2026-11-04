@@ -83,6 +83,7 @@ model User {
   uploadedImages          UploadedImage[]
   confirmedSequenceDrafts SequenceStepDraft[]
   marketingEvents         MarketingEvent[]
+  activationsCreated      Activation[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -205,6 +206,7 @@ model Contact {
   interactions        Interaction[]
   people              ContactPerson[]
   sequenceEnrollments SequenceEnrollment[]
+  activation          Activation?
   shootCards          ShootCard[]
   labEntries          StudioEntry[]
   calendarEvents      CalendarEvent[]
@@ -805,6 +807,8 @@ model CFOTransaction {
   rawText     String? // original pasted line, kept for re-review if parsing was off
   createdAt   DateTime   @default(now())
 
+  activationPayment ActivationPayment?
+
   @@index([userId, date])
   @@index([userId, category])
 }
@@ -1223,4 +1227,148 @@ model UploadedImage {
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
+}
+
+// --- Brand Activations: the B2B event-ops pipeline -----------------------
+//
+// Built from the Protocol B2B SOP manual (v1.3). A Contact becomes an
+// Activation once a brand deal is actually signed (status WON) — this is
+// deliberately a separate 1:1 record rather than more Contact fields,
+// since the SOP's timeline/rules/cost-sheet/sponsor data only exists for
+// signed deals, not for every lead in the pipeline above it.
+
+enum ActivationPackageTier {
+  BRONZE
+  SILVER
+  GOLD
+}
+
+// The SOP's 17-step timeline (Section 00/03), one row per step, seeded
+// when an Activation is created and dated backward from eventDate. owner
+// is freeform ("V" | "M" | "V+M" | "Brand") to match the SOP's table
+// exactly rather than forcing every step into a single-person enum.
+model ActivationStep {
+  id           String     @id @default(cuid())
+  activationId String
+  activation   Activation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+  stepNumber   Int // 1-17, SOP Section 03 order
+  title        String
+  owner        String
+  dueDate      DateTime?
+  doneWhen     String // the SOP's "done when" column, shown as a hint
+  done         Boolean    @default(false)
+  doneAt       DateTime?
+
+  @@unique([activationId, stepNumber])
+  @@index([activationId])
+}
+
+// Secondary sponsor slots per event (SOP Section 05). One sponsor per
+// category, and the main client's own category is automatically
+// exclusive — enforced in src/lib/activation-sponsors.ts, not just in
+// the UI, so a second brand in a filled category can't be saved at all.
+model SponsorSlot {
+  id           String     @id @default(cuid())
+  activationId String
+  activation   Activation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+  category     String // e.g. "Coffee", "Skincare", "Massage / bodywork"
+  brandName    String?
+  tier         String? // Sampling Only | Booth Sponsor | Experience Sponsor | Co-Presenting
+  fee          Float?
+  confirmed    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  @@index([activationId])
+}
+
+// The 20/40/40 payment schedule (SOP Section 02/06), generated from the
+// cost sheet total. Each milestone optionally links to a CFOTransaction
+// once it's actually invoiced/received, so Protocol's committed revenue
+// shows up in the existing CFO module instead of living only here.
+model ActivationPayment {
+  id               String          @id @default(cuid())
+  activationId     String
+  activation       Activation      @relation(fields: [activationId], references: [id], onDelete: Cascade)
+  label            String // "Deposit (20%)" | "Second payment (40%, T-7 days)" | "Final payment (40%)"
+  amount           Float
+  dueDate          DateTime?
+  status           String          @default("PLANNED") // PLANNED | INVOICED | RECEIVED
+  cfoTransactionId String?         @unique
+  cfoTransaction   CFOTransaction? @relation(fields: [cfoTransactionId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+
+  @@index([activationId])
+}
+
+model Activation {
+  id        String  @id @default(cuid())
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  eventName String
+  eventDate DateTime?
+
+  packageTier      ActivationPackageTier @default(BRONZE)
+  clientMultiplier Float                 @default(5) // 5-10x, see SOP Section 02
+
+  // Activation Rules gate (SOP Section R). Gate 1 (rules 1-4) is required
+  // before the proposal goes out (step 3); gate 2 (rules 5-10) is required
+  // before the team brief (step 7). Stored as free text, one field per
+  // rule, since each rule's "pass" condition is a written sentence, not a
+  // boolean — see src/lib/activation-rules.ts for the gate check itself.
+  rule1Goal          String?
+  rule2Connection    String?
+  rule3Currency      String?
+  rule4Story         String?
+  gate1PassedAt      DateTime?
+  rule5StartEarly    String?
+  rule6GrandEntrance String?
+  rule7Journey       String?
+  rule8PeakMoment    String?
+  rule9Trigger       String?
+  rule10CloseLoop    String?
+  gate2PassedAt      DateTime?
+
+  // Cost sheet (SOP Section 01/02). lineItems mirrors the SOP artifact's
+  // fill-in calculator: [{ group, label, qty, unitCost }]. Totals are
+  // recomputed server-side from lineItems on every save, not trusted from
+  // the client — see src/lib/activation-cost-sheet.ts.
+  costLineItems    Json  @default("[]")
+  costBaseA        Float @default(0) // multiplied cost base incl. 10% contingency
+  costPassThroughB Float @default(0) // venue/permits, billed at cost
+  quotePreTax      Float @default(0)
+  quoteTax         Float @default(0) // GST 5% + QST 9.975%
+  quoteTotal       Float @default(0)
+
+  // Category exclusivity anchor for the sponsor tracker (SOP Section 05) —
+  // defaults to the main Contact's industry but editable, since "Pilates
+  // studio" (industry) and "yoga/fitness" (sponsor-exclusivity category)
+  // don't always read as the same string.
+  mainSponsorCategory String?
+
+  // AI-drafted documents (reuses the same Claude Haiku call already used
+  // for cold-outreach research — see src/lib/activation-drafts.ts). Each
+  // is a draft only: nothing sends on its own, same as SequenceStepDraft.
+  proposalDraft String?
+  contractDraft String?
+  reportDraft   String?
+
+  // Post-event report scorecard (SOP Section 04, Page 1)
+  attendanceTarget Int?
+  attendanceActual Int?
+  dayOfConversions Int?
+  revenueReported  Float?
+  totalImpressions Int?
+  referralCount    Int?
+  npsScore         Int?
+  reportNextStep   String?
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  steps    ActivationStep[]
+  sponsors SponsorSlot[]
+  payments ActivationPayment[]
 }

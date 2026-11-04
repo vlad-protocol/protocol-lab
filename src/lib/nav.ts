@@ -29,6 +29,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "CRM",
     items: [
       { href: "/dashboard/protocol-crm", label: "Protocol CRM", icon: "Handshake", module: "protocol_crm" },
+      { href: "/dashboard/activations", label: "Activations", icon: "Rocket", module: "activations" },
       { href: "/dashboard/sequences", label: "Follow-up Sequences", icon: "Repeat", module: "sequences" },
       { href: "/dashboard/automation-confirmations", label: "Automation Confirmations", icon: "ClipboardCheck", module: "sequences" },
       { href: "/dashboard/campaigns", label: "Campaigns", icon: "Radio", module: "campaigns" },

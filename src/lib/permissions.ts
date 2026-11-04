@@ -7,6 +7,7 @@ export const MODULES = [
   { key: "content_performance", label: "Content Performance (reels vs. ticket sales)" },
   { key: "sequences", label: "Follow-up Sequences (automated lead emails)" },
   { key: "protocol_crm", label: "Protocol CRM (leads, sponsors, and venues)" },
+  { key: "activations", label: "Activations (signed brand-event deals — timeline, rules, cost sheet, sponsors)" },
   { key: "campaigns", label: "Campaigns (mass email & SMS blasts)" },
   { key: "protocol_list", label: "Protocol List (event/workout audience)" },
   { key: "mail", label: "Mail" },
