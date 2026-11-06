@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Protocol Lab",
   description: "Personal business command center",
+  verification: {
+    google: "uTZ39LvUV9asmJzgHNOg6TJ4NJ4ToMTfxDkiZ0qz0Rs",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
