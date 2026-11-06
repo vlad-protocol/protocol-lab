@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import {
   type Lead,
   type LeadPriority,
   OPEN_STATUSES,
   PRIORITY_STYLE,
+  STATUS_LABEL,
   STATUS_OPTIONS,
   STATUS_STYLE,
   TYPE_STYLE,
@@ -19,6 +20,9 @@ const PRIORITY_OPTIONS: { value: LeadPriority; label: string }[] = [
   { value: "WARM", label: "Warm" },
   { value: "COLD", label: "Cold" },
 ];
+
+type SortKey = "company" | "status" | null;
+type SortDir = "asc" | "desc";
 
 function daysUntil(dateStr: string | null) {
   if (!dateStr) return null;
@@ -43,6 +47,34 @@ function fmtDateInput(dateStr: string | null) {
   return dateStr.slice(0, 10);
 }
 
+function SortHeader({
+  label,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  dir: SortDir;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 text-left hover:text-[var(--hq-text)]"
+      title={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      {active ? (
+        dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+      ) : (
+        <ArrowUpDown className="h-3 w-3 opacity-40" />
+      )}
+    </button>
+  );
+}
+
 export function ProtocolCRMView({
   leads,
   onPatch,
@@ -55,46 +87,52 @@ export function ProtocolCRMView({
   savingId: string | null;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("OPEN");
+  const [sortKey, setSortKey] = useState<SortKey>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const filtered = useMemo(() => {
-    return leads.filter((l) => {
-      if (statusFilter === "OPEN" && !OPEN_STATUSES.includes(l.status)) return false;
-      if (statusFilter !== "OPEN" && statusFilter !== "ALL" && l.status !== statusFilter) return false;
-      return true;
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return leads;
+    const arr = [...leads];
+    arr.sort((a, b) => {
+      let av: string;
+      let bv: string;
+      if (sortKey === "company") {
+        av = (a.companyName || a.contactName || "").toLowerCase();
+        bv = (b.companyName || b.contactName || "").toLowerCase();
+      } else {
+        av = STATUS_LABEL[a.status];
+        bv = STATUS_LABEL[b.status];
+      }
+      const cmp = av.localeCompare(bv);
+      return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [leads, statusFilter]);
+    return arr;
+  }, [leads, sortKey, sortDir]);
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg border border-[var(--hq-card-border)] bg-white px-2 py-2 text-sm"
-        >
-          <option value="OPEN">Open only</option>
-          <option value="ALL">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-[var(--hq-text-muted)]">
-          Showing {filtered.length} of {leads.length} leads.
-        </p>
-      </div>
-
       {/* Table */}
-      <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--hq-card-border)] bg-white">
+      <div className="overflow-x-auto rounded-xl border border-[var(--hq-card-border)] bg-white">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-[var(--hq-card-border)] bg-[var(--hq-canvas)] text-xs uppercase text-[var(--hq-text-muted)]">
             <tr>
               <th className="w-6 px-2 py-2"></th>
-              <th className="px-3 py-2">Company</th>
+              <th className="px-3 py-2">
+                <SortHeader label="Company" active={sortKey === "company"} dir={sortDir} onClick={() => toggleSort("company")} />
+              </th>
               <th className="px-3 py-2">Contact</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">
+                <SortHeader label="Status" active={sortKey === "status"} dir={sortDir} onClick={() => toggleSort("status")} />
+              </th>
               <th className="px-3 py-2">Priority</th>
               <th className="px-3 py-2">Rep</th>
               <th className="px-3 py-2">Next follow-up</th>
@@ -102,7 +140,7 @@ export function ProtocolCRMView({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((l) => {
+            {sorted.map((l) => {
               const isOpen = openId === l.id;
               const flag = followUpFlag(l.nextFollowUpDate);
               return (
@@ -182,7 +220,7 @@ export function ProtocolCRMView({
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && (
+            {sorted.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-xs text-[var(--hq-text-muted)]">
                   No leads match these filters.
