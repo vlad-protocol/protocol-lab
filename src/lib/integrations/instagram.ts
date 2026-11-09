@@ -16,6 +16,20 @@ import { encryptSecret, decryptSecret } from "@/lib/crypto";
 // two weeks of expiring, per Meta's refresh rules.
 
 const GRAPH_VERSION = "v21.0";
+const GRAPH_HOST = "https://graph.facebook.com";
+// NOTE (Nov 2026): Meta now forces newly-created apps onto its "Unified
+// Login" flow (a System User Access Token / SUAT), not the classic
+// direct Instagram-Login OAuth this file originally targeted. The old
+// getInstagramAuthUrl/exchangeInstagramCode path below only works on an
+// app that still has classic "Business Login for Instagram" available —
+// a new Meta app hits "Invalid platform app" on it instead. The
+// supported path now is connectInstagramManually(): generate a SUAT for
+// the account in Meta's dashboard (Use cases -> Instagram API -> API
+// setup with Unified login -> Generate access tokens), then paste it
+// into Settings. SUAT tokens never expire (no refresh needed) and are
+// called via graph.facebook.com using the account's ig-user-id as the
+// node, confirmed live — graph.instagram.com and the "me" shortcut both
+// fail for this token type.
 
 export function isInstagramConfigured() {
   return Boolean(process.env.IG_APP_ID && process.env.IG_APP_SECRET && process.env.IG_REDIRECT_URI);
@@ -96,6 +110,55 @@ async function getConnection() {
   return prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } });
 }
 
+// Manual-token connect path: Meta's newer "Unified Login" apps issue a
+// System User Access Token (SUAT) directly from the dashboard instead of
+// through an OAuth redirect. SUATs never expire, so tokenExpiresAt is set
+// ~100 years out — refreshInstagramTokenIfNeeded()'s renewal-window check
+// above then naturally never fires for this connection. Verifies the
+// token against graph.facebook.com (not graph.instagram.com — confirmed
+// live that SUATs are only recognized on the Facebook host) using the
+// given igUserId as the node, before ever saving it.
+export async function connectInstagramManually({
+  igUserId,
+  accessToken,
+}: {
+  igUserId: string;
+  accessToken: string;
+}) {
+  const verifyRes = await fetch(
+    `${GRAPH_HOST}/${GRAPH_VERSION}/${igUserId}?fields=username,ig_id&access_token=${accessToken}`
+  );
+  if (!verifyRes.ok) {
+    throw new Error(`Instagram token verification failed: ${await verifyRes.text()}`);
+  }
+  const verifyJson = await verifyRes.json();
+  const username = (verifyJson.username as string) || null;
+
+  const farFuture = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+  const existing = await getConnection();
+  if (existing) {
+    return prisma.instagramConnection.update({
+      where: { id: existing.id },
+      data: {
+        igUserId,
+        username,
+        accessToken: encryptSecret(accessToken),
+        tokenExpiresAt: farFuture,
+        lastRefreshAt: new Date(),
+      },
+    });
+  }
+  return prisma.instagramConnection.create({
+    data: {
+      igUserId,
+      username,
+      accessToken: encryptSecret(accessToken),
+      tokenExpiresAt: farFuture,
+      connectedAt: new Date(),
+    },
+  });
+}
+
 // Meta's rule: a long-lived token can be refreshed for another ~60 days
 // once it's at least 24 hours old, any time before it expires. Called
 // every tick but only actually hits the network when it's genuinely due
@@ -151,7 +214,7 @@ export async function fetchInstagramMedia(limit = 25): Promise<InstagramMedia[]>
 
   const fields = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
   const res = await fetch(
-    `https://graph.instagram.com/${GRAPH_VERSION}/me/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
+    `${GRAPH_HOST}/${GRAPH_VERSION}/${conn.igUserId}/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
   );
   if (!res.ok) throw new Error(`Instagram media fetch failed: ${await res.text()}`);
   const json = await res.json();
@@ -183,7 +246,7 @@ async function fetchMediaInsights(mediaId: string, accessToken: string): Promise
   const metricSets = ["reach,likes,comments,shares,saved,plays", "reach,likes,comments,shares,saved"];
   for (const metrics of metricSets) {
     const res = await fetch(
-      `https://graph.instagram.com/${GRAPH_VERSION}/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`
+      `${GRAPH_HOST}/${GRAPH_VERSION}/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`
     );
     if (!res.ok) continue;
     const json = await res.json();
@@ -231,7 +294,7 @@ export async function publishInstagramReel(videoUrl: string, caption: string): P
   if (!conn) throw new Error("Instagram isn't connected yet.");
   const accessToken = decryptSecret(conn.accessToken);
 
-  const createRes = await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/me/media`, {
+  const createRes = await fetch(`${GRAPH_HOST}/${GRAPH_VERSION}/${conn.igUserId}/media`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -251,7 +314,7 @@ export async function publishInstagramReel(videoUrl: string, caption: string): P
   const deadline = Date.now() + 2 * 60 * 1000;
   while (Date.now() < deadline) {
     const statusRes = await fetch(
-      `https://graph.instagram.com/${GRAPH_VERSION}/${creationId}?fields=status_code&access_token=${accessToken}`
+      `${GRAPH_HOST}/${GRAPH_VERSION}/${creationId}?fields=status_code&access_token=${accessToken}`
     );
     if (!statusRes.ok) throw new Error(`Instagram container status check failed: ${await statusRes.text()}`);
     const { status_code } = await statusRes.json();
@@ -262,7 +325,7 @@ export async function publishInstagramReel(videoUrl: string, caption: string): P
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
 
-  const publishRes = await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/me/media_publish`, {
+  const publishRes = await fetch(`${GRAPH_HOST}/${GRAPH_VERSION}/${conn.igUserId}/media_publish`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }).toString(),
