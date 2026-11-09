@@ -4,22 +4,55 @@
   --background: #ffffff;
   --foreground: #171717;
 
-  /* HQ design tokens, matched to the reference screenshots */
+  /* HQ design tokens — canvas/cards/typography restyled after
+     getripping.com: soft neutral-grey canvas, near-black text/buttons,
+     diffuse low-opacity shadows instead of hard borders for depth, and
+     generous corner radius. The dark sidebar is kept as its own
+     distinct surface (unchanged) rather than converted to match. */
   --hq-sidebar: #17171f;
   --hq-sidebar-border: #26262f;
   --hq-sidebar-hover: #202029;
   --hq-sidebar-active: #262f42;
   --hq-sidebar-text: #d4d4d8;
   --hq-sidebar-text-dim: #71717a;
-  --hq-canvas: #faf7f2;
+  --hq-canvas: #f4f4f4;
   --hq-card: #ffffff;
-  --hq-card-border: #e7e2d9;
-  --hq-text: #18181b;
+  --hq-card-border: #e6e6e6;
+  --hq-text: #262626;
   --hq-text-muted: #71717a;
-  --hq-accent: #3b5bfa;
-  --hq-accent-soft: #eef1ff;
+  --hq-accent: #2563eb;
+  --hq-accent-soft: #eef2ff;
   --hq-positive: #16a34a;
   --hq-negative: #dc2626;
+
+  --hq-radius: 12px;
+  --hq-radius-md: 8px;
+  --hq-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 24px 48px -24px rgba(0, 0, 0, 0.14);
+  --hq-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.05), 0 28px 56px -24px rgba(0, 0, 0, 0.2);
+  --hq-shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.12),
+    0 8px 16px -8px rgba(0, 0, 0, 0.22);
+}
+
+/* Card surfaces across the app consistently use this Tailwind
+   combination (rounded-xl + border + bg-white) — add the Ripping-style
+   soft diffuse shadow and a touch more roundness globally here instead
+   of touching every component individually. */
+.rounded-xl.border,
+.rounded-xl.border-\[var\(--hq-card-border\)\] {
+  border-radius: var(--hq-radius);
+  box-shadow: var(--hq-shadow-card);
+  transition: box-shadow 0.15s ease;
+}
+.rounded-xl.border:hover,
+.rounded-xl.border-\[var\(--hq-card-border\)\]:hover {
+  box-shadow: var(--hq-shadow-hover);
+}
+
+/* Primary (solid near-black) buttons/links get the same soft glossy
+   depth Ripping's CTA buttons have, via its existing bg-[var(--hq-text)]
+   convention. */
+[class*="bg-[var(--hq-text)]"] {
+  box-shadow: var(--hq-shadow-btn);
 }
 
 @theme inline {

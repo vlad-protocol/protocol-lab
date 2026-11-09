@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const geistSans = Geist({
+// Inter, not Geist — matched to the getripping.com-style redesign (see
+// globals.css for the rest of the palette/shadow/radius tokens).
+const geistSans = Inter({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });
