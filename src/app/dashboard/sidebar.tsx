@@ -14,6 +14,34 @@ function Icon({ name, className }: { name: string; className?: string }) {
   return <Cmp className={className} />;
 }
 
+// Ripping-style colorful icon chips — a small rounded-square gradient
+// behind each nav icon instead of one flat sidebar-text-colored glyph.
+// "instagram" gets the actual Instagram gradient; everything else is a
+// vivid two-stop gradient in that color family.
+const ICON_CHIP_COLORS: Record<string, string> = {
+  slate: "linear-gradient(135deg, #52525b, #3f3f46)",
+  orange: "linear-gradient(135deg, #fb923c, #ea580c)",
+  amber: "linear-gradient(135deg, #fbbf24, #d97706)",
+  blue: "linear-gradient(135deg, #60a5fa, #2563eb)",
+  green: "linear-gradient(135deg, #4ade80, #16a34a)",
+  teal: "linear-gradient(135deg, #2dd4bf, #0d9488)",
+  cyan: "linear-gradient(135deg, #22d3ee, #0891b2)",
+  purple: "linear-gradient(135deg, #c084fc, #9333ea)",
+  violet: "linear-gradient(135deg, #a78bfa, #7c3aed)",
+  indigo: "linear-gradient(135deg, #818cf8, #4f46e5)",
+  pink: "linear-gradient(135deg, #f472b6, #db2777)",
+  red: "linear-gradient(135deg, #f87171, #dc2626)",
+  instagram: "linear-gradient(135deg, #f9ce34, #ee2a7b, #6228d7)",
+};
+
+function IconChip({ name, color }: { name: string; color?: string }) {
+  return (
+    <span className="hq-icon-chip" style={{ background: ICON_CHIP_COLORS[color || "slate"] }}>
+      <Icon name={name} />
+    </span>
+  );
+}
+
 export function Sidebar({
   userLabel,
   handle,
@@ -40,7 +68,7 @@ export function Sidebar({
           <Icons.Sparkle className="h-4 w-4 text-white" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-wide text-white">Protocol Lab</p>
+          <p className="hq-gradient-text truncate text-sm font-semibold tracking-wide">Protocol Lab</p>
           <p className="truncate text-xs text-[var(--hq-sidebar-text-dim)]">{handle}</p>
         </div>
         {role === "EMPLOYEE" && (
@@ -106,7 +134,7 @@ export function Sidebar({
                       }`}
                     >
                       <span className="flex items-center gap-2">
-                        <Icon name={item.icon} className="h-3.5 w-3.5" />
+                        <IconChip name={item.icon} color={item.color} />
                         {item.label}
                       </span>
                       <span className="flex items-center gap-1.5">

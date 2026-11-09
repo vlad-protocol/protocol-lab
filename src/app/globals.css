@@ -1,58 +1,130 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --background: #0b0b0c;
+  --foreground: #f2f1ee;
 
-  /* HQ design tokens — canvas/cards/typography restyled after
-     getripping.com: soft neutral-grey canvas, near-black text/buttons,
-     diffuse low-opacity shadows instead of hard borders for depth, and
-     generous corner radius. The dark sidebar is kept as its own
-     distinct surface (unchanged) rather than converted to match. */
-  --hq-sidebar: #17171f;
-  --hq-sidebar-border: #26262f;
-  --hq-sidebar-hover: #202029;
-  --hq-sidebar-active: #262f42;
+  /* HQ design tokens — getripping.com is actually a dark, near-black
+     product with a warm orange accent and glowing CTAs (the first pass
+     at this used CSS variables a fetch tool pulled from the page's
+     unused light-theme defaults, not what it actually renders — fixed
+     here against a real screenshot). Committed single dark theme, no
+     light-mode variant, same as the Protocol brand artifacts. */
+  --hq-sidebar: #0f0f10;
+  --hq-sidebar-border: #232324;
+  --hq-sidebar-hover: #1a1a1c;
+  --hq-sidebar-active: #241a0f;
   --hq-sidebar-text: #d4d4d8;
-  --hq-sidebar-text-dim: #71717a;
-  --hq-canvas: #f4f4f4;
-  --hq-card: #ffffff;
-  --hq-card-border: #e6e6e6;
-  --hq-text: #262626;
-  --hq-text-muted: #71717a;
-  --hq-accent: #2563eb;
-  --hq-accent-soft: #eef2ff;
-  --hq-positive: #16a34a;
-  --hq-negative: #dc2626;
+  --hq-sidebar-text-dim: #7a7a7e;
+  --hq-canvas: #0b0b0c;
+  --hq-card: #161616;
+  --hq-card-border: #2a2a2a;
+  --hq-text: #f2f1ee;
+  --hq-text-muted: #8a8a8a;
+  --hq-accent: #f5811f;
+  --hq-accent-soft: #2a1d0f;
+  --hq-positive: #4ade80;
+  --hq-negative: #f87171;
 
   --hq-radius: 12px;
   --hq-radius-md: 8px;
-  --hq-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 24px 48px -24px rgba(0, 0, 0, 0.14);
-  --hq-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.05), 0 28px 56px -24px rgba(0, 0, 0, 0.2);
-  --hq-shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.12),
-    0 8px 16px -8px rgba(0, 0, 0, 0.22);
+  --hq-shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 1px 0 rgba(0, 0, 0, 0.5);
+  --hq-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(245, 129, 31, 0.25),
+    0 8px 24px -8px rgba(245, 129, 31, 0.18);
+  --hq-shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 1px rgba(245, 129, 31, 0.4),
+    0 4px 20px -2px rgba(245, 129, 31, 0.5);
 }
 
 /* Card surfaces across the app consistently use this Tailwind
-   combination (rounded-xl + border + bg-white) — add the Ripping-style
-   soft diffuse shadow and a touch more roundness globally here instead
-   of touching every component individually. */
+   combination (rounded-xl + border + bg-white) — retrofit them to the
+   dark palette and a Ripping-style glow-on-hover globally here instead
+   of touching every component individually. `bg-white` is overridden
+   site-wide to the dark card color (the vast majority of card/panel
+   backgrounds in the app use the literal `bg-white` utility, not a
+   token) so this one rule flips virtually every surface at once. */
+.bg-white {
+  background-color: var(--hq-card) !important;
+}
 .rounded-xl.border,
 .rounded-xl.border-\[var\(--hq-card-border\)\] {
   border-radius: var(--hq-radius);
   box-shadow: var(--hq-shadow-card);
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .rounded-xl.border:hover,
 .rounded-xl.border-\[var\(--hq-card-border\)\]:hover {
   box-shadow: var(--hq-shadow-hover);
+  border-color: rgba(245, 129, 31, 0.35);
 }
 
-/* Primary (solid near-black) buttons/links get the same soft glossy
-   depth Ripping's CTA buttons have, via its existing bg-[var(--hq-text)]
-   convention. */
+/* Primary (solid near-black -> now near-white-on-dark via --hq-text)
+   buttons/links get the same warm glow Ripping's CTA buttons have, via
+   its existing bg-[var(--hq-text)] convention. */
 [class*="bg-[var(--hq-text)]"] {
   box-shadow: var(--hq-shadow-btn);
+}
+
+/* Form fields default to a plain white background with no dark styling
+   anywhere in the app (bg-white isn't set on most of them at all) —
+   style every bare input/select/textarea here rather than touching
+   each of the many forms. */
+input,
+select,
+textarea {
+  background-color: var(--hq-card);
+  color: var(--hq-text);
+  color-scheme: dark;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--hq-text-muted);
+}
+
+/* Status badges/warning boxes across the app use literal pale Tailwind
+   utilities (bg-emerald-50 + text-emerald-700, etc.) sized for a light
+   canvas — overridden here to translucent, dark-appropriate versions of
+   the same colors so every badge stays legible without editing each
+   component. */
+.bg-emerald-50 { background-color: rgba(34, 197, 94, 0.14) !important; }
+.text-emerald-700, .text-emerald-800 { color: #4ade80 !important; }
+.bg-red-50 { background-color: rgba(239, 68, 68, 0.14) !important; }
+.text-red-600, .text-red-700, .text-red-800 { color: #f87171 !important; }
+.border-red-200 { border-color: rgba(239, 68, 68, 0.35) !important; }
+.bg-amber-50 { background-color: rgba(245, 158, 11, 0.14) !important; }
+.text-amber-700, .text-amber-800 { color: #fbbf24 !important; }
+.border-amber-200 { border-color: rgba(245, 158, 11, 0.35) !important; }
+.bg-blue-50 { background-color: rgba(59, 130, 246, 0.14) !important; }
+.text-blue-700, .text-blue-800 { color: #60a5fa !important; }
+.border-blue-200 { border-color: rgba(59, 130, 246, 0.35) !important; }
+
+/* Protocol Lab wordmark + sidebar section labels get a touch of
+   Ripping's colorful-gradient-on-key-word treatment. */
+.hq-gradient-text {
+  background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6, var(--hq-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Colorful icon chips (sidebar nav, section headers) — a small
+   rounded-square with a gradient fill behind the icon, matching
+   Ripping's colorful app-icon treatment instead of a flat single-tone
+   icon. */
+.hq-icon-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.hq-icon-chip svg {
+  width: 13px;
+  height: 13px;
+  color: #fff;
 }
 
 @theme inline {
@@ -63,7 +135,9 @@
 }
 
 body {
-  background: var(--background);
+  background: radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(245, 129, 31, 0.08), transparent),
+    var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
