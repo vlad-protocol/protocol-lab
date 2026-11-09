@@ -52,7 +52,7 @@ export function Timeline({
 
   const [noteForm, setNoteForm] = useState({ body: "" });
   const [callForm, setCallForm] = useState({ direction: "OUTBOUND", durationSeconds: "", body: "" });
-  const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "" });
+  const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "", transcript: "" });
   const [textForm, setTextForm] = useState({ to: contactPhone || "", body: "" });
   const [emailForm, setEmailForm] = useState({ to: contactEmail || "", subject: "", body: "" });
   const [drafting, setDrafting] = useState(false);
@@ -111,8 +111,9 @@ export function Timeline({
       durationSeconds: Number(videoForm.durationSeconds) || null,
       recordingUrl: videoForm.recordingUrl || null,
       body: videoForm.body,
+      transcript: videoForm.transcript || null,
     });
-    setVideoForm({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "" });
+    setVideoForm({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "", transcript: "" });
   }
 
   async function submitText(sendReal: boolean) {
@@ -308,7 +309,12 @@ export function Timeline({
               <div className="rounded-md bg-[var(--hq-canvas)] p-3 text-xs text-[var(--hq-text-muted)]">
                 Log a video call (Zoom, Meet, Teams, etc.) — paste the link to wherever the
                 recording lives (Zoom cloud, Google Drive, YouTube unlisted, whatever you use) so
-                it shows up right here on the lead's timeline.
+                it shows up right here on the lead's timeline. Also paste Zoom's own
+                auto-generated transcript below if you have one (Zoom &rarr; Recordings &rarr;
+                Audio Transcript) — it's already speaker-labeled and goes straight into Sales
+                Coach. No transcript pasted but there's a direct recording link? We'll try
+                auto-transcribing it (works for a publicly reachable file; a Zoom link that
+                requires signing in to view won't work that way — paste the transcript instead).
               </div>
               <div className="flex gap-2">
                 <select
@@ -340,6 +346,13 @@ export function Timeline({
                 className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
                 value={videoForm.body}
                 onChange={(e) => setVideoForm({ ...videoForm, body: e.target.value })}
+              />
+              <textarea
+                placeholder="Paste the Zoom transcript here (optional) — goes straight to Sales Coach"
+                rows={4}
+                className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                value={videoForm.transcript}
+                onChange={(e) => setVideoForm({ ...videoForm, transcript: e.target.value })}
               />
               <button disabled={submitting} className="rounded-md bg-[var(--hq-text)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
                 Log video call

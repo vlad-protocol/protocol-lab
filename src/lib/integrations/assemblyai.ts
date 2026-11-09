@@ -14,10 +14,13 @@ export function isCallTranscriptionConfigured() {
 // Twilio's recording URL requires your Twilio account's own credentials
 // (Basic auth) to fetch — AssemblyAI can't be pointed at it directly, so
 // we download the audio ourselves first and re-upload the bytes.
-async function downloadTwilioRecording(recordingUrl: string, accountSid: string, authToken: string): Promise<Buffer> {
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-  const res = await fetch(recordingUrl, { headers: { Authorization: `Basic ${auth}` } });
-  if (!res.ok) throw new Error(`Couldn't download the Twilio recording (${res.status}).`);
+async function downloadRecording(recordingUrl: string, basicAuth?: { username: string; password: string }): Promise<Buffer> {
+  const headers: Record<string, string> = {};
+  if (basicAuth) {
+    headers.Authorization = `Basic ${Buffer.from(`${basicAuth.username}:${basicAuth.password}`).toString("base64")}`;
+  }
+  const res = await fetch(recordingUrl, { headers });
+  if (!res.ok) throw new Error(`Couldn't download the recording (${res.status}).`);
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -58,14 +61,20 @@ async function pollTranscript(id: string, apiKey: string): Promise<AssemblyTrans
 // "Speaker B", etc. AssemblyAI tells speakers apart but doesn't know which
 // one is the rep vs. the lead — the reader infers that from context (the
 // rep is almost always whoever speaks first, right after the call connects).
-export async function transcribeCallRecording(
+//
+// basicAuth is only needed for a Twilio recording URL (Twilio requires your
+// account credentials to fetch it). A Zoom (or other) recording link that's
+// directly downloadable needs no auth — pass none. A Zoom link that
+// requires signing in to view will fail here; paste that recording's own
+// Zoom-generated transcript directly instead (see the Video call form).
+export async function transcribeRecording(
   recordingUrl: string,
-  twilioAuth: { accountSid: string; authToken: string }
+  basicAuth?: { username: string; password: string }
 ): Promise<string> {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
   if (!apiKey) throw new Error("ASSEMBLYAI_API_KEY isn't set — required for call transcription.");
 
-  const buffer = await downloadTwilioRecording(recordingUrl, twilioAuth.accountSid, twilioAuth.authToken);
+  const buffer = await downloadRecording(recordingUrl, basicAuth);
   const uploadUrl = await uploadToAssemblyAi(buffer, apiKey);
 
   const createRes = await fetch(`${BASE}/transcript`, {

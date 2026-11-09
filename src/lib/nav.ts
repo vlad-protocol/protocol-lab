@@ -48,6 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/comms", label: "Comms", icon: "MessageSquare", module: "comms", color: "green" },
       { href: "/dashboard/recordings", label: "Recordings", icon: "Video", module: "recordings", color: "red" },
       { href: "/dashboard/copilot", label: "Copilot", icon: "Bot", module: "copilot", color: "violet" },
+      { href: "/dashboard/sales-coach", label: "Sales Coach", icon: "GraduationCap", module: "sales_coach", color: "amber" },
     ],
   },
   {

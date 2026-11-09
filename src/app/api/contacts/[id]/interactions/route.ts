@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   const body = await req.json();
-  const { type, direction, subject, body: text, durationSeconds, recordingUrl, occurredAt } =
+  const { type, direction, subject, body: text, durationSeconds, recordingUrl, occurredAt, transcript } =
     body as {
       type?: string;
       direction?: string;
@@ -25,11 +25,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       durationSeconds?: number;
       recordingUrl?: string;
       occurredAt?: string;
+      transcript?: string;
     };
 
   if (!type || !direction) {
     return NextResponse.json({ error: "type and direction are required." }, { status: 400 });
   }
+
+  // A pasted transcript (e.g. Zoom's own auto-generated transcript on a
+  // VIDEO_CALL) is already speaker-labeled and done — nothing to run
+  // through the transcription pipeline. A recording link with no pasted
+  // transcript queues up for best-effort auto-transcription instead (see
+  // lib/call-transcription.ts); CALL interactions get their recording +
+  // PENDING status from the Twilio webhook, not here.
+  const trimmedTranscript = transcript?.trim() || null;
+  const transcriptStatus = trimmedTranscript
+    ? "DONE"
+    : type === "VIDEO_CALL" && recordingUrl
+      ? "PENDING"
+      : null;
 
   const interaction = await prisma.interaction.create({
     data: {
@@ -42,6 +56,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       durationSeconds: durationSeconds ?? null,
       recordingUrl: recordingUrl || null,
       occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
+      transcript: trimmedTranscript,
+      transcriptStatus,
     },
   });
   if (isTouchInteraction(interaction.type, interaction.direction)) {

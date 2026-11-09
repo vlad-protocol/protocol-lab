@@ -23,6 +23,7 @@ export const MODULES = [
   { key: "docs", label: "Docs & Sign" },
   { key: "recordings", label: "Recordings" },
   { key: "copilot", label: "Copilot (meeting notes)" },
+  { key: "sales_coach", label: "Sales Coach (call transcripts + AI coaching)" },
   { key: "ads", label: "Ads" },
   { key: "ig_automations", label: "IG Automations" },
   { key: "cfo", label: "CFO (personal budget)" },
