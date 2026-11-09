@@ -215,3 +215,56 @@ export async function downloadInstagramVideo(mediaUrl: string): Promise<Buffer> 
   if (!res.ok) throw new Error(`Failed to download Instagram media: ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
 }
+
+// Publishes a video (Reel) that's already hosted somewhere reachable by
+// Instagram's servers (e.g. uploaded to S3/Cloudinary outside this app —
+// this project has no video storage/generation of its own yet). Uses the
+// Content Publishing API's two-step container flow: create a media
+// container from the video URL, poll until Instagram finishes processing
+// it, then publish the container. Returns the new post's Instagram media
+// id so the caller can link it back to a ContentPost row.
+export async function publishInstagramReel(videoUrl: string, caption: string): Promise<string> {
+  const conn = await getConnection();
+  if (!conn) throw new Error("Instagram isn't connected yet.");
+  const accessToken = decryptSecret(conn.accessToken);
+
+  const createRes = await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/me/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      media_type: "REELS",
+      video_url: videoUrl,
+      caption,
+      access_token: accessToken,
+    }).toString(),
+  });
+  if (!createRes.ok) throw new Error(`Instagram container creation failed: ${await createRes.text()}`);
+  const { id: creationId } = await createRes.json();
+
+  // Instagram processes the video asynchronously — poll status_code
+  // (IN_PROGRESS -> FINISHED/ERROR) rather than publishing immediately,
+  // which fails if the container isn't ready yet. Capped at ~2 minutes
+  // of polling; a video that isn't done by then almost certainly failed.
+  const deadline = Date.now() + 2 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const statusRes = await fetch(
+      `https://graph.instagram.com/${GRAPH_VERSION}/${creationId}?fields=status_code&access_token=${accessToken}`
+    );
+    if (!statusRes.ok) throw new Error(`Instagram container status check failed: ${await statusRes.text()}`);
+    const { status_code } = await statusRes.json();
+    if (status_code === "FINISHED") break;
+    if (status_code === "ERROR" || status_code === "EXPIRED") {
+      throw new Error(`Instagram failed to process the video (status: ${status_code}).`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+
+  const publishRes = await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/me/media_publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }).toString(),
+  });
+  if (!publishRes.ok) throw new Error(`Instagram publish failed: ${await publishRes.text()}`);
+  const { id: mediaId } = await publishRes.json();
+  return mediaId as string;
+}

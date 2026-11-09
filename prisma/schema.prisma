@@ -85,6 +85,10 @@ model User {
   marketingEvents         MarketingEvent[]
   activationsCreated      Activation[]
   sopDocumentsCreated     SopDocument[]
+  contentIdeasCreated     ContentIdea[]
+  contentScriptsCreated   ContentScript[]
+  contentPostsCreated     ContentPost[]
+  contentCarouselsCreated ContentCarousel[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -1183,7 +1187,9 @@ model InstagramPost {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  events MarketingEvent[]
+  events       MarketingEvent[]
+  contentPosts ContentPost[]
+  carousels    ContentCarousel[]
 
   @@index([postedAt])
   @@index([transcriptStatus])
@@ -1211,6 +1217,166 @@ model ZeffyConnection {
   id          String   @id @default(cuid())
   apiKey      String // encrypted at rest
   connectedAt DateTime @default(now())
+}
+
+// --- Content Engine: idea queue -> AI-drafted scripts -> production
+// status -> calendar/publish -> pre-post scoring -> repurposing into
+// carousels. Builds on the existing Instagram sync (InstagramPost /
+// InstagramConnection) instead of a second integration — ContentPost
+// links out to the InstagramPost row once a post is actually published
+// and the regular sync pulls it back in, so Analyze reads real numbers
+// rather than a second metrics table. Nothing here copies any
+// third-party scoring algorithm, UI, or branding — original
+// implementation of the same functional idea.
+
+enum ContentIdeaStatus {
+  INBOX // saved, not yet turned into a script
+  SCRIPTED // at least one script has been drafted from it
+  ARCHIVED
+}
+
+// Swipe stage: a saved reference post (yours or a competitor's) kept as
+// inspiration, with a note on why it worked. hookPattern is a short
+// AI-set tag (e.g. "names the enemy", "hook in first second") from
+// tagContentIdea() in lib/content-engine.ts — optional, never required
+// to save an idea.
+model ContentIdea {
+  id             String            @id @default(cuid())
+  title          String
+  sourceUrl      String?
+  sourcePlatform String            @default("instagram")
+  whyItWorks     String? // the user's own note on why this is worth swiping
+  hookPattern    String? // AI-tagged angle, set on save if Claude is configured
+  status         ContentIdeaStatus @default(INBOX)
+
+  scripts ContentScript[]
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum ContentScriptStatus {
+  DRAFT // AI-drafted or hand-written, not yet approved
+  APPROVED // locked in, ready to film
+  FILMING
+  EDITING
+  READY // edited, ready to schedule/post
+  POSTED
+  ARCHIVED
+}
+
+// Script stage: a titled script broken into hook/body/closing prompt,
+// either drafted by Claude from a ContentIdea (draftContentScript() in
+// lib/content-engine.ts) or written by hand. viralityScore is a pre-post
+// prediction (0-100, our own original scoring — see
+// scoreContentScript()). productionFormat/status track the shoot/edit
+// pipeline manually for now — no AI video generation is wired in until
+// there's a HeyGen-style provider account.
+model ContentScript {
+  id            String  @id @default(cuid())
+  title         String
+  hook          String
+  body          String // multi-line beats, one idea per line
+  closingPrompt String? // the comment-bait line the script ends on
+
+  status           ContentScriptStatus @default(DRAFT)
+  productionFormat String? // e.g. "Talking head", "Voiceover + b-roll", "Text overlay" — free text, manual for now
+
+  viralityScore Int? // 0-100, pre-post prediction
+  viralityNotes String? // short AI explanation behind the score
+
+  ideaId String?
+  idea   ContentIdea? @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  posts ContentPost[]
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum ContentPostStatus {
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+// Post/Calendar stage: when a finished script is meant to go out.
+// Publish pushes to Instagram via publishInstagramReel() in
+// lib/integrations/instagram.ts once scheduledFor arrives;
+// instagramPostId links it to the InstagramPost row the regular sync
+// pulls back in afterward.
+model ContentPost {
+  id           String            @id @default(cuid())
+  caption      String?
+  // A publicly reachable URL for the finished, edited video (e.g.
+  // uploaded to S3/Cloudinary/etc. outside this app) — required to
+  // actually publish, since Instagram's Content Publishing API needs a
+  // hosted file to fetch, not a local upload. Left null, this row is
+  // just a calendar placeholder until a video exists.
+  videoUrl     String?
+  scheduledFor DateTime?
+  status       ContentPostStatus @default(SCHEDULED)
+  publishError String?
+
+  scriptId String?
+  script   ContentScript? @relation(fields: [scriptId], references: [id], onDelete: SetNull)
+
+  instagramPostId String?        @unique
+  instagramPost   InstagramPost? @relation(fields: [instagramPostId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+enum ContentCarouselStatus {
+  DRAFT
+  READY
+  POSTED
+}
+
+// Repurpose stage: takes one winning InstagramPost and spins it into new
+// hook angles plus a slide-by-slide carousel breakdown. Generated by
+// repurposeWinningPost() in lib/content-engine.ts — original
+// implementation of the functional idea, not a copy of any third-party
+// algorithm or UI.
+model ContentCarousel {
+  id       String                @id @default(cuid())
+  title    String
+  newHooks String[]              @default([])
+  status   ContentCarouselStatus @default(DRAFT)
+
+  sourcePostId String?
+  sourcePost   InstagramPost? @relation(fields: [sourcePostId], references: [id], onDelete: SetNull)
+
+  slides ContentCarouselSlide[]
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ContentCarouselSlide {
+  id         String          @id @default(cuid())
+  carouselId String
+  carousel   ContentCarousel @relation(fields: [carouselId], references: [id], onDelete: Cascade)
+  position   Int
+  text       String
+
+  @@index([carouselId])
 }
 
 // Images uploaded through the campaign email block editor. Stored as raw
