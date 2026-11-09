@@ -21,7 +21,7 @@ const PRIORITY_OPTIONS: { value: LeadPriority; label: string }[] = [
   { value: "COLD", label: "Cold" },
 ];
 
-type SortKey = "company" | "status" | null;
+type SortKey = "company" | "status" | "added" | null;
 type SortDir = "asc" | "desc";
 
 function daysUntil(dateStr: string | null) {
@@ -108,6 +108,9 @@ export function ProtocolCRMView({
       if (sortKey === "company") {
         av = (a.companyName || a.contactName || "").toLowerCase();
         bv = (b.companyName || b.contactName || "").toLowerCase();
+      } else if (sortKey === "added") {
+        av = a.createdAt || "";
+        bv = b.createdAt || "";
       } else {
         av = STATUS_LABEL[a.status];
         bv = STATUS_LABEL[b.status];
@@ -135,6 +138,9 @@ export function ProtocolCRMView({
               </th>
               <th className="px-3 py-2">Priority</th>
               <th className="px-3 py-2">Rep</th>
+              <th className="px-3 py-2">
+                <SortHeader label="Added" active={sortKey === "added"} dir={sortDir} onClick={() => toggleSort("added")} />
+              </th>
               <th className="px-3 py-2">Next follow-up</th>
               <th className="px-3 py-2 text-right">Deal value</th>
             </tr>
@@ -193,6 +199,9 @@ export function ProtocolCRMView({
                       </select>
                     </td>
                     <td className="px-3 py-2.5 text-[var(--hq-text-muted)]">{l.assignedRep || "—"}</td>
+                    <td className="px-3 py-2.5 text-[var(--hq-text-muted)]" title={new Date(l.createdAt).toLocaleString()}>
+                      {new Date(l.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
                         <input
@@ -212,7 +221,7 @@ export function ProtocolCRMView({
                   </tr>
                   {isOpen && (
                     <tr className="border-b border-[var(--hq-card-border)] bg-[var(--hq-canvas)]/40">
-                      <td colSpan={8} className="px-4 py-4">
+                      <td colSpan={9} className="px-4 py-4">
                         <LeadDetail lead={l} onPatch={(data) => onPatch(l.id, data)} onDelete={() => onRemove(l.id)} saving={savingId === l.id} />
                       </td>
                     </tr>
@@ -222,7 +231,7 @@ export function ProtocolCRMView({
             })}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-xs text-[var(--hq-text-muted)]">
+                <td colSpan={9} className="px-4 py-8 text-center text-xs text-[var(--hq-text-muted)]">
                   No leads match these filters.
                 </td>
               </tr>

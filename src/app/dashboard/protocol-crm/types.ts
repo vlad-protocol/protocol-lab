@@ -37,6 +37,7 @@ export type Lead = {
   eventOpportunity: string | null;
   dealValue: number | null;
   notes: string | null;
+  createdAt: string;
 };
 
 export const TYPE_OPTIONS: { value: LeadType; label: string }[] = [

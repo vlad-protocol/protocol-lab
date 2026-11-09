@@ -26,6 +26,8 @@ export function ProtocolCRMShell({ initialLeads }: { initialLeads: Lead[] }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [repFilter, setRepFilter] = useState<string>("ALL");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
   // Status show/hide filter — defaults to showing every stage, including Won/Lost,
   // so nothing (e.g. leads already marked Won) is ever hidden by default.
@@ -64,6 +66,8 @@ export function ProtocolCRMShell({ initialLeads }: { initialLeads: Lead[] }) {
     setSelectedStatuses(new Set(ALL_STATUSES));
     setOverdueOnly(false);
     setTypeFilter("ALL");
+    setDateFrom("");
+    setDateTo("");
   }
 
   function applyQuickFilter(key: QuickFilterKey) {
@@ -127,20 +131,28 @@ export function ProtocolCRMShell({ initialLeads }: { initialLeads: Lead[] }) {
         if (!OPEN_STATUSES.includes(l.status) || !l.nextFollowUpDate) return false;
         if (new Date(l.nextFollowUpDate).getTime() >= Date.now()) return false;
       }
+      if (dateFrom) {
+        if (new Date(l.createdAt).getTime() < new Date(dateFrom + "T00:00:00").getTime()) return false;
+      }
+      if (dateTo) {
+        if (new Date(l.createdAt).getTime() > new Date(dateTo + "T23:59:59.999").getTime()) return false;
+      }
       if (q) {
         const hay = `${l.companyName || ""} ${l.contactName || ""} ${l.industry || ""} ${l.eventOpportunity || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [leads, search, typeFilter, repFilter, selectedStatuses, overdueOnly]);
+  }, [leads, search, typeFilter, repFilter, selectedStatuses, overdueOnly, dateFrom, dateTo]);
 
   const filtersActive =
     quickFilter !== null ||
     overdueOnly ||
     typeFilter !== "ALL" ||
     repFilter !== "ALL" ||
-    selectedStatuses.size !== ALL_STATUSES.length;
+    selectedStatuses.size !== ALL_STATUSES.length ||
+    dateFrom !== "" ||
+    dateTo !== "";
 
   async function patch(id: string, data: Record<string, unknown>) {
     setSavingId(id);
@@ -263,6 +275,26 @@ export function ProtocolCRMShell({ initialLeads }: { initialLeads: Lead[] }) {
             </option>
           ))}
         </select>
+        <div className="flex items-center gap-1 rounded-lg border border-[var(--hq-card-border)] bg-white px-2 py-1.5 text-sm">
+          <span className="text-[11px] text-[var(--hq-text-muted)]">Added</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            max={dateTo || undefined}
+            className="bg-transparent text-xs outline-none"
+            aria-label="Added from date"
+          />
+          <span className="text-[11px] text-[var(--hq-text-muted)]">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            min={dateFrom || undefined}
+            className="bg-transparent text-xs outline-none"
+            aria-label="Added to date"
+          />
+        </div>
 
         {/* Status show/hide multi-select */}
         <div className="relative">
