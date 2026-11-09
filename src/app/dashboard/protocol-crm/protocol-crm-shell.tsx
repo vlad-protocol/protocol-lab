@@ -12,6 +12,7 @@ import {
 import { ProtocolCRMView } from "./protocol-crm-view";
 import { ProtocolCRMBoard } from "./protocol-crm-board";
 import { AddLeadButton } from "./add-lead-button";
+import { ImportMontrealLeadsButton } from "./import-montreal-leads-button";
 
 type ViewMode = "list" | "board";
 type QuickFilterKey = "active" | "clients" | "sponsors" | "venues" | "won" | "overdue" | null;
@@ -323,6 +324,13 @@ export function ProtocolCRMShell({ initialLeads }: { initialLeads: Lead[] }) {
         )}
 
         <AddLeadButton onCreated={(lead) => setLeads((prev) => [...prev, lead])} />
+        <ImportMontrealLeadsButton
+          onImported={() => {
+            fetch("/api/contacts")
+              .then((r) => r.json())
+              .then((d) => d.contacts && setLeads(d.contacts));
+          }}
+        />
       </div>
 
       <p className="mt-2 text-xs text-[var(--hq-text-muted)]">
