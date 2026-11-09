@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
+import { recordContactTouch, isTouchInteraction } from "@/lib/crm-touch";
 
 // Manual interaction logging — a call you made from your own phone, a text
 // you sent from somewhere else, or a plain note. Emails sent through the
@@ -43,6 +44,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
     },
   });
+  if (isTouchInteraction(interaction.type, interaction.direction)) {
+    await recordContactTouch(id, interaction.occurredAt);
+  }
 
   return NextResponse.json({ interaction });
 }

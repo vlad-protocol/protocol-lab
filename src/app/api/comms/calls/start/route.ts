@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
 import { startRecordedCall } from "@/lib/integrations/twilio";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 // Click-to-call: rings the rep's own phone first, then bridges to the
 // contact once they pick up, recording from the moment the bridge
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
       body: "Call in progress…",
     },
   });
+  await recordContactTouch(contactId, interaction.occurredAt);
 
   return NextResponse.json({ interaction, callSid });
 }

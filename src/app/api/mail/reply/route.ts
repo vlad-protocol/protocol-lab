@@ -4,6 +4,7 @@ import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { sendGmailReply } from "@/lib/integrations/gmail";
 import { findOrCreateContactByEmail } from "@/lib/crm-contact";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
       externalId,
     },
   });
+  await recordContactTouch(contactId, interaction.occurredAt);
 
   return NextResponse.json({ interaction, sent: true });
 }

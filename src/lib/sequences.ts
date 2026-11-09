@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
 import { resolveOutboundEmail, advanceLeadStageForSentStep } from "@/lib/crm-contact";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 function firstNameOf(contactName: string): string {
   return contactName.trim().split(/\s+/)[0] || contactName;
@@ -284,7 +285,7 @@ export async function runDueSequenceSteps() {
       const body = fillTemplate(template.body, enrollment.contact, repUser?.name || "");
       const externalId = await sendGmail(enrollment.sequence.createdById, toEmail, subject, body);
 
-      await prisma.interaction.create({
+      const interaction = await prisma.interaction.create({
         data: {
           contactId: enrollment.contactId,
           userId: enrollment.sequence.createdById,
@@ -298,6 +299,7 @@ export async function runDueSequenceSteps() {
           sequenceStepOrder: stepOrder,
         },
       });
+      await recordContactTouch(enrollment.contactId, interaction.occurredAt);
 
       await advanceLeadStageForSentStep(enrollment.contactId, stepOrder);
 

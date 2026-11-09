@@ -3,6 +3,7 @@ import { sendGmail } from "@/lib/integrations/gmail";
 import { daysToMs, fillTemplate, stepTemplateFor } from "@/lib/sequences";
 import { researchStepPersonalization } from "@/lib/sequence-research";
 import { resolveOutboundEmail, advanceLeadStageForSentStep } from "@/lib/crm-contact";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 // The confirmation-gated counterpart to runDueSequenceSteps (see
 // sequences.ts) — for any ACTIVE enrollment on a requiresConfirmation
@@ -202,7 +203,7 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
 
   const externalId = await sendGmail(enrollment.sequence.createdById, toEmail, draft.subject, draft.body);
 
-  await prisma.interaction.create({
+  const interaction = await prisma.interaction.create({
     data: {
       contactId: enrollment.contactId,
       userId: enrollment.sequence.createdById,
@@ -216,6 +217,7 @@ export async function sendConfirmedDraft(draftId: string, confirmedById: string)
       sequenceStepOrder: draft.stepOrder,
     },
   });
+  await recordContactTouch(enrollment.contactId, interaction.occurredAt);
 
   const nextIndex = draft.stepOrder + 1;
   const nextStep = enrollment.sequence.steps[nextIndex];

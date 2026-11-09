@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { listGmailMessagesPage, extractEmailAddresses, extractEmailAddress } from "@/lib/integrations/gmail";
 import { mapEmailsToContactIds } from "@/lib/crm-contact";
+import { recordContactTouchesBatch } from "@/lib/crm-touch";
 
 // One-time backfill: walks every message in the connected Gmail
 // account's mailbox — not just what's currently in Inbox or Sent, but
@@ -98,28 +99,49 @@ export async function runGmailHistorySyncChunk(userId: string, budgetMs = 45_000
         const toCreate = pairs.filter((p) => !existingSet.has(`${p.externalId}:${p.contactId}`));
 
         if (toCreate.length > 0) {
-          await prisma.interaction.createMany({
-            data: toCreate.map((p) => {
-              const parsedDate = new Date(p.m.date);
-              // A message keeps SENT as long as it was sent from this
-              // account, even after being archived — that's the
-              // reliable per-message signal, not which query found it.
-              const direction: "OUTBOUND" | "INBOUND" = p.m.labelIds.includes("SENT") ? "OUTBOUND" : "INBOUND";
-              return {
-                contactId: p.contactId,
-                userId: direction === "OUTBOUND" ? userId : undefined,
-                type: "EMAIL" as const,
-                direction,
-                subject: p.m.subject || null,
-                body: p.m.snippet || null,
-                fromAddress: extractEmailAddress(p.m.from) || p.m.from || null,
-                toAddress: extractEmailAddress(p.m.to) || p.m.to || null,
-                externalId: p.m.id,
-                occurredAt: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
-              };
-            }),
+          const rows = toCreate.map((p) => {
+            const parsedDate = new Date(p.m.date);
+            // A message keeps SENT as long as it was sent from this
+            // account, even after being archived — that's the
+            // reliable per-message signal, not which query found it.
+            const direction: "OUTBOUND" | "INBOUND" = p.m.labelIds.includes("SENT") ? "OUTBOUND" : "INBOUND";
+            return {
+              contactId: p.contactId,
+              userId: direction === "OUTBOUND" ? userId : undefined,
+              type: "EMAIL" as const,
+              direction,
+              subject: p.m.subject || null,
+              body: p.m.snippet || null,
+              fromAddress: extractEmailAddress(p.m.from) || p.m.from || null,
+              toAddress: extractEmailAddress(p.m.to) || p.m.to || null,
+              externalId: p.m.id,
+              occurredAt: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+            };
           });
+          await prisma.interaction.createMany({ data: rows });
           matchedTotal += toCreate.length;
+
+          // Bulk-backfilled history still counts toward each lead's
+          // touch bookkeeping (totalTouches / lastContactDate) — same
+          // rule as a live send, just batched per contact instead of
+          // one DB round trip per message. Only outbound messages count
+          // as a touch you made; inbound replies don't.
+          const perContact = new Map<string, { count: number; latestAt: Date }>();
+          for (const row of rows) {
+            if (row.direction !== "OUTBOUND") continue;
+            const prev = perContact.get(row.contactId);
+            if (!prev) {
+              perContact.set(row.contactId, { count: 1, latestAt: row.occurredAt });
+            } else {
+              prev.count++;
+              if (row.occurredAt > prev.latestAt) prev.latestAt = row.occurredAt;
+            }
+          }
+          if (perContact.size > 0) {
+            await recordContactTouchesBatch(
+              Array.from(perContact.entries()).map(([contactId, v]) => ({ contactId, ...v }))
+            );
+          }
         }
       }
 

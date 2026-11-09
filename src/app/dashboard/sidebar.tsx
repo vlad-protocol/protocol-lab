@@ -18,20 +18,24 @@ function Icon({ name, className }: { name: string; className?: string }) {
 // behind each nav icon instead of one flat sidebar-text-colored glyph.
 // "instagram" gets the actual Instagram gradient; everything else is a
 // vivid two-stop gradient in that color family.
+// Muted/darker than a first pass at this — flat saturated Tailwind
+// colors (e.g. #60a5fa, #4ade80) read as neon against a near-black
+// canvas; these are closer to Ripping's actual numbered-stage chip
+// colors, which are dark jewel tones, not bright flat ones.
 const ICON_CHIP_COLORS: Record<string, string> = {
-  slate: "linear-gradient(135deg, #52525b, #3f3f46)",
-  orange: "linear-gradient(135deg, #fb923c, #ea580c)",
-  amber: "linear-gradient(135deg, #fbbf24, #d97706)",
-  blue: "linear-gradient(135deg, #60a5fa, #2563eb)",
-  green: "linear-gradient(135deg, #4ade80, #16a34a)",
-  teal: "linear-gradient(135deg, #2dd4bf, #0d9488)",
-  cyan: "linear-gradient(135deg, #22d3ee, #0891b2)",
-  purple: "linear-gradient(135deg, #c084fc, #9333ea)",
-  violet: "linear-gradient(135deg, #a78bfa, #7c3aed)",
-  indigo: "linear-gradient(135deg, #818cf8, #4f46e5)",
-  pink: "linear-gradient(135deg, #f472b6, #db2777)",
-  red: "linear-gradient(135deg, #f87171, #dc2626)",
-  instagram: "linear-gradient(135deg, #f9ce34, #ee2a7b, #6228d7)",
+  slate: "linear-gradient(135deg, #46464c, #2c2c30)",
+  orange: "linear-gradient(135deg, #c2660c, #8a4208)",
+  amber: "linear-gradient(135deg, #a8670a, #78480a)",
+  blue: "linear-gradient(135deg, #3b63c4, #284788)",
+  green: "linear-gradient(135deg, #15803d, #0d5c2c)",
+  teal: "linear-gradient(135deg, #0f8a7a, #0b6459)",
+  cyan: "linear-gradient(135deg, #1480a0, #0e5f78)",
+  purple: "linear-gradient(135deg, #7c3fc9, #592c93)",
+  violet: "linear-gradient(135deg, #6d4aad, #4e3480)",
+  indigo: "linear-gradient(135deg, #4f54b8, #383c87)",
+  pink: "linear-gradient(135deg, #b83e7f, #8a2e60)",
+  red: "linear-gradient(135deg, #c0392b, #8e2a20)",
+  instagram: "linear-gradient(135deg, #d9ac2e, #c22469, #4e1fae)",
 };
 
 function IconChip({ name, color }: { name: string; color?: string }) {

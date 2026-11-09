@@ -28,6 +28,7 @@ export default async function ProtocolCRMPage() {
         <ProtocolCRMShell
           initialLeads={leads.map((l) => ({
             ...l,
+            createdAt: l.createdAt.toISOString(),
             dateFirstContacted: l.dateFirstContacted ? l.dateFirstContacted.toISOString() : null,
             lastContactDate: l.lastContactDate ? l.lastContactDate.toISOString() : null,
             nextFollowUpDate: l.nextFollowUpDate ? l.nextFollowUpDate.toISOString() : null,

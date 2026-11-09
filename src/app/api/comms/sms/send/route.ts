@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { canAccess } from "@/lib/permissions";
 import { sendSms } from "@/lib/integrations/twilio";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
       externalId,
     },
   });
+  await recordContactTouch(contactId, interaction.occurredAt);
 
   return NextResponse.json({ interaction, sent: !logOnly });
 }

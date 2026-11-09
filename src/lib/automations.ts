@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmail } from "@/lib/integrations/gmail";
+import { recordContactTouch } from "@/lib/crm-touch";
 
 function fillTemplate(text: string, contact: { contactName: string; companyName: string | null }) {
   return text
@@ -126,7 +127,7 @@ export async function runAutomation(automationId: string) {
         const subject = fillTemplate((actionConfig.subject as string) || "", contact);
         const emailBody = fillTemplate((actionConfig.body as string) || "", contact);
         const externalId = await sendGmail(automation.createdById, contact.email, subject, emailBody);
-        await prisma.interaction.create({
+        const interaction = await prisma.interaction.create({
           data: {
             contactId: contact.id,
             userId: automation.createdById,
@@ -138,6 +139,7 @@ export async function runAutomation(automationId: string) {
             externalId,
           },
         });
+        await recordContactTouch(contact.id, interaction.occurredAt);
         applied++;
       }
     } catch (err) {
