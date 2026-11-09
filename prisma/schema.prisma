@@ -1187,12 +1187,20 @@ model InstagramPost {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  // Which connected account this media belongs to — nullable only for
+  // rows synced before multi-account support existed; every row synced
+  // going forward gets one. See connectInstagramManually() / the
+  // Settings "Instagram" card for how accounts are added.
+  instagramConnectionId String?
+  instagramConnection    InstagramConnection? @relation(fields: [instagramConnectionId], references: [id], onDelete: SetNull)
+
   events       MarketingEvent[]
   contentPosts ContentPost[]
   carousels    ContentCarousel[]
 
   @@index([postedAt])
   @@index([transcriptStatus])
+  @@index([instagramConnectionId])
 }
 
 // Long-lived Instagram access token for the one connected professional
@@ -1202,12 +1210,20 @@ model InstagramPost {
 // refreshInstagramTokenIfNeeded() in lib/integrations/instagram.ts.
 model InstagramConnection {
   id             String    @id @default(cuid())
-  igUserId       String
+  igUserId       String    @unique
   username       String?
+  // Optional nickname so multiple connected accounts are easy to tell
+  // apart in Settings and the Content Engine's account picker (e.g.
+  // "Protocol brand" vs "Vlad personal") — purely cosmetic, never sent
+  // to Meta.
+  label          String?
   accessToken    String // encrypted at rest, see src/lib/crypto.ts
   tokenExpiresAt DateTime
   lastRefreshAt  DateTime?
   connectedAt    DateTime  @default(now())
+
+  posts        InstagramPost[]
+  contentPosts ContentPost[]
 }
 
 // Zeffy has no OAuth flow — just a bearer API key generated from their
@@ -1332,6 +1348,12 @@ model ContentPost {
   instagramPostId String?        @unique
   instagramPost   InstagramPost? @relation(fields: [instagramPostId], references: [id], onDelete: SetNull)
 
+  // Which connected account to publish this post to — required (set in
+  // the Calendar UI) before Publish will work when more than one
+  // account is connected.
+  instagramConnectionId String?
+  instagramConnection    InstagramConnection? @relation(fields: [instagramConnectionId], references: [id], onDelete: SetNull)
+
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
@@ -1339,6 +1361,7 @@ model ContentPost {
 
   @@index([scheduledFor])
   @@index([status])
+  @@index([instagramConnectionId])
 }
 
 enum ContentCarouselStatus {

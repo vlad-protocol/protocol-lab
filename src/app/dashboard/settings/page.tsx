@@ -16,7 +16,7 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   const twilio = await prisma.twilioConnection.findFirst({ orderBy: { connectedAt: "desc" } });
-  const instagram = await prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+  const instagramAccounts = await prisma.instagramConnection.findMany({ orderBy: { connectedAt: "desc" } });
   const zeffy = await prisma.zeffyConnection.findFirst({ orderBy: { connectedAt: "desc" } });
   const signature = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -77,8 +77,7 @@ export default async function SettingsPage() {
           </p>
           <InstagramConnectCard
             configured={isInstagramConfigured()}
-            connected={!!instagram}
-            username={instagram?.username || null}
+            accounts={JSON.parse(JSON.stringify(instagramAccounts))}
           />
           <ZeffyConnectCard connected={!!zeffy} />
 

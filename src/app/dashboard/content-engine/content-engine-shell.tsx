@@ -43,6 +43,13 @@ type Script = {
   posts: { id: string; status: string; scheduledFor: string | null }[];
 };
 
+type InstagramAccount = {
+  id: string;
+  igUserId: string;
+  username: string | null;
+  label: string | null;
+};
+
 type CalendarPost = {
   id: string;
   caption: string | null;
@@ -52,6 +59,8 @@ type CalendarPost = {
   publishError: string | null;
   script: { id: string; title: string; hook: string } | null;
   instagramPost: { id: string; permalink: string | null; thumbnailUrl: string | null; views: number | null; likes: number | null } | null;
+  instagramConnection: { id: string; username: string | null; label: string | null } | null;
+  instagramConnectionId?: string | null;
 };
 
 type TopPost = {
@@ -101,7 +110,7 @@ export function ContentEngineShell({
   initialPosts,
   initialCarousels,
   topPosts,
-  instagramConnected,
+  instagramAccounts,
   instagramConfigured,
   aiConfigured,
 }: {
@@ -110,7 +119,7 @@ export function ContentEngineShell({
   initialPosts: CalendarPost[];
   initialCarousels: Carousel[];
   topPosts: TopPost[];
-  instagramConnected: boolean;
+  instagramAccounts: InstagramAccount[];
   instagramConfigured: boolean;
   aiConfigured: boolean;
 }) {
@@ -153,7 +162,7 @@ export function ContentEngineShell({
             posts={posts}
             setPosts={setPosts}
             scripts={scripts}
-            instagramConnected={instagramConnected}
+            instagramAccounts={instagramAccounts}
             instagramConfigured={instagramConfigured}
           />
         )}
@@ -483,15 +492,17 @@ function CalendarTab({
   posts,
   setPosts,
   scripts,
-  instagramConnected,
+  instagramAccounts,
   instagramConfigured,
 }: {
   posts: CalendarPost[];
   setPosts: React.Dispatch<React.SetStateAction<CalendarPost[]>>;
   scripts: Script[];
-  instagramConnected: boolean;
+  instagramAccounts: InstagramAccount[];
   instagramConfigured: boolean;
 }) {
+  const instagramConnected = instagramAccounts.length > 0;
+  const accountLabel = (a: InstagramAccount) => a.label || (a.username ? `@${a.username}` : a.igUserId);
   const [publishingId, setPublishingId] = useState<string | null>(null);
 
   async function updatePost(id: string, data: Record<string, string | null>) {
@@ -564,6 +575,20 @@ function CalendarTab({
                 placeholder="Finished video URL (hosted somewhere reachable by Instagram)"
                 className="mt-1.5 w-full rounded-lg border border-[var(--hq-card-border)] px-2.5 py-1.5 text-xs"
               />
+              {instagramAccounts.length > 0 && (
+                <select
+                  defaultValue={post.instagramConnectionId || post.instagramConnection?.id || ""}
+                  onChange={(e) => updatePost(post.id, { instagramConnectionId: e.target.value || null })}
+                  className="mt-1.5 w-full rounded-lg border border-[var(--hq-card-border)] px-2.5 py-1.5 text-xs"
+                >
+                  <option value="">Pick an account to publish to…</option>
+                  {instagramAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {accountLabel(a)}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="mt-1.5 flex items-center gap-2">
                 <input
                   type="datetime-local"
@@ -598,7 +623,12 @@ function CalendarTab({
             <div className="flex shrink-0 flex-col items-end gap-1.5">
               <button
                 onClick={() => publishPost(post.id)}
-                disabled={publishingId === post.id || post.status === "PUBLISHED" || !post.videoUrl}
+                disabled={
+                  publishingId === post.id ||
+                  post.status === "PUBLISHED" ||
+                  !post.videoUrl ||
+                  !(post.instagramConnectionId || post.instagramConnection?.id)
+                }
                 className="flex items-center gap-1.5 rounded-full bg-[var(--hq-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
               >
                 <Send className="h-3 w-3" /> {publishingId === post.id ? "Publishing…" : post.status === "PUBLISHED" ? "Published" : "Publish"}

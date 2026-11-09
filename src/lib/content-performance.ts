@@ -4,6 +4,7 @@ import {
   fetchInstagramInsightsFor,
   downloadInstagramVideo,
   refreshInstagramTokenIfNeeded,
+  listInstagramConnections,
 } from "@/lib/integrations/instagram";
 import { transcribeVideo, isTranscriptionConfigured } from "@/lib/integrations/transcription";
 import { listZeffyCampaigns, getZeffyCampaignTotals } from "@/lib/integrations/zeffy";
@@ -27,49 +28,70 @@ const CONTENT_CATEGORIES = [
 export async function syncInstagramContent() {
   await refreshInstagramTokenIfNeeded();
 
-  const media = await fetchInstagramMedia(25);
+  const connections = await listInstagramConnections();
   const results: { igMediaId: string; created: boolean; error?: string }[] = [];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  for (const m of media) {
+  // Multi-account: pull each connected account's media separately and
+  // tag every row with which account it came from, so Content
+  // Performance and the Content Engine can tell them apart.
+  for (const connection of connections) {
+    let media: Awaited<ReturnType<typeof fetchInstagramMedia>>;
     try {
-      const existing = await prisma.instagramPost.findUnique({ where: { igMediaId: m.igMediaId } });
-      const shouldRefreshMetrics = !existing || (m.postedAt && m.postedAt > thirtyDaysAgo);
-
-      let insights = { views: null, likes: null, comments: null, shares: null, saves: null } as Awaited<
-        ReturnType<typeof fetchInstagramInsightsFor>
-      >;
-      if (shouldRefreshMetrics) {
-        try {
-          insights = await fetchInstagramInsightsFor(m.igMediaId);
-        } catch {
-          // Insights can fail for very fresh posts (not yet processed) or
-          // image-only posts with no video metrics — leave numbers null
-          // rather than failing the whole sync over one post.
-        }
-      }
-
-      const isVideo = m.mediaType === "VIDEO" || m.mediaType === "REELS";
-      await prisma.instagramPost.upsert({
-        where: { igMediaId: m.igMediaId },
-        create: {
-          igMediaId: m.igMediaId,
-          permalink: m.permalink,
-          mediaType: m.mediaType,
-          caption: m.caption,
-          thumbnailUrl: m.thumbnailUrl,
-          postedAt: m.postedAt,
-          transcriptStatus: isVideo ? "PENDING" : "SKIPPED",
-          ...insights,
-          lastMetricsSyncAt: shouldRefreshMetrics ? new Date() : null,
-        },
-        update: shouldRefreshMetrics
-          ? { ...insights, caption: m.caption, lastMetricsSyncAt: new Date() }
-          : { caption: m.caption },
-      });
-      results.push({ igMediaId: m.igMediaId, created: !existing });
+      media = await fetchInstagramMedia(connection.id, 25);
     } catch (err) {
-      results.push({ igMediaId: m.igMediaId, created: false, error: err instanceof Error ? err.message : "failed" });
+      results.push({
+        igMediaId: `(account ${connection.username || connection.igUserId})`,
+        created: false,
+        error: err instanceof Error ? err.message : "media fetch failed",
+      });
+      continue;
+    }
+
+    for (const m of media) {
+      try {
+        const existing = await prisma.instagramPost.findUnique({ where: { igMediaId: m.igMediaId } });
+        const shouldRefreshMetrics = !existing || (m.postedAt && m.postedAt > thirtyDaysAgo);
+
+        let insights = { views: null, likes: null, comments: null, shares: null, saves: null } as Awaited<
+          ReturnType<typeof fetchInstagramInsightsFor>
+        >;
+        if (shouldRefreshMetrics) {
+          try {
+            insights = await fetchInstagramInsightsFor(connection.id, m.igMediaId);
+          } catch {
+            // Insights can fail for very fresh posts (not yet processed) or
+            // image-only posts with no video metrics — leave numbers null
+            // rather than failing the whole sync over one post.
+          }
+        }
+
+        const isVideo = m.mediaType === "VIDEO" || m.mediaType === "REELS";
+        await prisma.instagramPost.upsert({
+          where: { igMediaId: m.igMediaId },
+          create: {
+            igMediaId: m.igMediaId,
+            permalink: m.permalink,
+            mediaType: m.mediaType,
+            caption: m.caption,
+            thumbnailUrl: m.thumbnailUrl,
+            postedAt: m.postedAt,
+            transcriptStatus: isVideo ? "PENDING" : "SKIPPED",
+            instagramConnectionId: connection.id,
+            ...insights,
+            lastMetricsSyncAt: shouldRefreshMetrics ? new Date() : null,
+          },
+          // Also backfills instagramConnectionId on an older row that
+          // predates multi-account support, or one created by a
+          // just-published ContentPost before this sync ran.
+          update: shouldRefreshMetrics
+            ? { ...insights, caption: m.caption, instagramConnectionId: connection.id, lastMetricsSyncAt: new Date() }
+            : { caption: m.caption, instagramConnectionId: connection.id },
+        });
+        results.push({ igMediaId: m.igMediaId, created: !existing });
+      } catch (err) {
+        results.push({ igMediaId: m.igMediaId, created: false, error: err instanceof Error ? err.message : "failed" });
+      }
     }
   }
   return results;
@@ -93,7 +115,8 @@ export async function transcribePendingPosts(batchSize = 5) {
   for (const post of pending) {
     await prisma.instagramPost.update({ where: { id: post.id }, data: { transcriptStatus: "PROCESSING" } });
     try {
-      const media = await fetchInstagramMedia(25);
+      if (!post.instagramConnectionId) throw new Error("This post isn't tagged with a connected account yet — it'll pick one up on the next sync.");
+      const media = await fetchInstagramMedia(post.instagramConnectionId, 25);
       const match = media.find((m) => m.igMediaId === post.igMediaId);
       if (!match?.mediaUrl) throw new Error("Media URL no longer available from Instagram.");
       const buffer = await downloadInstagramVideo(match.mediaUrl);

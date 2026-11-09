@@ -12,6 +12,7 @@ export async function GET() {
     include: {
       script: { select: { id: true, title: true, hook: true } },
       instagramPost: { select: { id: true, permalink: true, thumbnailUrl: true, views: true, likes: true } },
+      instagramConnection: { select: { id: true, username: true, label: true } },
     },
     orderBy: { scheduledFor: "asc" },
   });
@@ -27,11 +28,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json();
-  const { scriptId, caption, scheduledFor, videoUrl } = body as {
+  const { scriptId, caption, scheduledFor, videoUrl, instagramConnectionId } = body as {
     scriptId?: string;
     caption?: string;
     scheduledFor?: string;
     videoUrl?: string;
+    instagramConnectionId?: string;
   };
   const post = await prisma.contentPost.create({
     data: {
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
       caption: caption?.trim() || null,
       scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
       videoUrl: videoUrl?.trim() || null,
+      instagramConnectionId: instagramConnectionId || null,
       createdById: session.user.id,
     },
   });

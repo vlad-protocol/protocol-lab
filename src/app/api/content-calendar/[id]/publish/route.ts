@@ -24,13 +24,21 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!post.videoUrl) {
     return NextResponse.json({ error: "Add a video URL to this post before publishing." }, { status: 400 });
   }
+  if (!post.instagramConnectionId) {
+    return NextResponse.json({ error: "Pick which connected account to publish this to first." }, { status: 400 });
+  }
 
   try {
-    const igMediaId = await publishInstagramReel(post.videoUrl, post.caption || "");
+    const igMediaId = await publishInstagramReel(post.instagramConnectionId, post.videoUrl, post.caption || "");
     const instagramPost = await prisma.instagramPost.upsert({
       where: { igMediaId },
-      create: { igMediaId, caption: post.caption, transcriptStatus: "PENDING" },
-      update: {},
+      create: {
+        igMediaId,
+        caption: post.caption,
+        transcriptStatus: "PENDING",
+        instagramConnectionId: post.instagramConnectionId,
+      },
+      update: { instagramConnectionId: post.instagramConnectionId },
     });
     const updated = await prisma.contentPost.update({
       where: { id },

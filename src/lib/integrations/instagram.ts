@@ -106,8 +106,18 @@ export async function exchangeInstagramCode(code: string) {
   };
 }
 
-async function getConnection() {
-  return prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } });
+// Multi-account support: every connected Instagram account lives as its
+// own InstagramConnection row (upserted by igUserId — see
+// connectInstagramManually below). Most callers now take an explicit
+// connectionId instead of assuming "the" connection.
+export async function listInstagramConnections() {
+  return prisma.instagramConnection.findMany({ orderBy: { connectedAt: "desc" } });
+}
+
+async function getConnectionById(connectionId: string) {
+  const conn = await prisma.instagramConnection.findUnique({ where: { id: connectionId } });
+  if (!conn) throw new Error("That Instagram account isn't connected anymore.");
+  return conn;
 }
 
 // Manual-token connect path: Meta's newer "Unified Login" apps issue a
@@ -121,9 +131,11 @@ async function getConnection() {
 export async function connectInstagramManually({
   igUserId,
   accessToken,
+  label,
 }: {
   igUserId: string;
   accessToken: string;
+  label?: string;
 }) {
   const verifyRes = await fetch(
     `${GRAPH_HOST}/${GRAPH_VERSION}/${igUserId}?fields=username,ig_id&access_token=${accessToken}`
@@ -135,28 +147,32 @@ export async function connectInstagramManually({
   const username = (verifyJson.username as string) || null;
 
   const farFuture = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
-  const existing = await getConnection();
-  if (existing) {
-    return prisma.instagramConnection.update({
-      where: { id: existing.id },
-      data: {
-        igUserId,
-        username,
-        accessToken: encryptSecret(accessToken),
-        tokenExpiresAt: farFuture,
-        lastRefreshAt: new Date(),
-      },
-    });
-  }
-  return prisma.instagramConnection.create({
-    data: {
+  // Upsert by igUserId (unique) rather than "the" existing row — this is
+  // what makes connecting a second, third, etc. account just add a new
+  // row instead of overwriting the first, while reconnecting the SAME
+  // account (a refreshed/replacement token) still updates it in place.
+  return prisma.instagramConnection.upsert({
+    where: { igUserId },
+    create: {
       igUserId,
       username,
+      label: label?.trim() || null,
       accessToken: encryptSecret(accessToken),
       tokenExpiresAt: farFuture,
       connectedAt: new Date(),
     },
+    update: {
+      username,
+      ...(label?.trim() ? { label: label.trim() } : {}),
+      accessToken: encryptSecret(accessToken),
+      tokenExpiresAt: farFuture,
+      lastRefreshAt: new Date(),
+    },
   });
+}
+
+export async function disconnectInstagramAccount(connectionId: string) {
+  await prisma.instagramConnection.delete({ where: { id: connectionId } });
 }
 
 // Meta's rule: a long-lived token can be refreshed for another ~60 days
@@ -165,32 +181,36 @@ export async function connectInstagramManually({
 // (older than a day, and within two weeks of expiring) or after the
 // initial connect — cheap to call often.
 export async function refreshInstagramTokenIfNeeded() {
-  const conn = await getConnection();
-  if (!conn) return;
+  const conns = await prisma.instagramConnection.findMany();
+  for (const conn of conns) {
+    const now = Date.now();
+    const dayOld = now - conn.connectedAt.getTime() > 24 * 60 * 60 * 1000;
+    const lastRefreshOldEnough = !conn.lastRefreshAt || now - conn.lastRefreshAt.getTime() > 24 * 60 * 60 * 1000;
+    const withinRenewalWindow = conn.tokenExpiresAt.getTime() - now < 14 * 24 * 60 * 60 * 1000;
+    // SUAT tokens (the manual-connect path) are saved with a ~100-year
+    // expiry, so withinRenewalWindow never fires for them — this loop
+    // only ever actually does anything for a legacy classic-OAuth
+    // connection that's still within its ~60-day token life.
+    if (!dayOld || !lastRefreshOldEnough || !withinRenewalWindow) continue;
 
-  const now = Date.now();
-  const dayOld = now - conn.connectedAt.getTime() > 24 * 60 * 60 * 1000;
-  const lastRefreshOldEnough = !conn.lastRefreshAt || now - conn.lastRefreshAt.getTime() > 24 * 60 * 60 * 1000;
-  const withinRenewalWindow = conn.tokenExpiresAt.getTime() - now < 14 * 24 * 60 * 60 * 1000;
-  if (!dayOld || !lastRefreshOldEnough || !withinRenewalWindow) return;
-
-  try {
-    const accessToken = decryptSecret(conn.accessToken);
-    const res = await fetch(
-      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${accessToken}`
-    );
-    if (!res.ok) throw new Error(await res.text());
-    const json = await res.json();
-    await prisma.instagramConnection.update({
-      where: { id: conn.id },
-      data: {
-        accessToken: encryptSecret(json.access_token),
-        tokenExpiresAt: new Date(Date.now() + (json.expires_in || 5184000) * 1000),
-        lastRefreshAt: new Date(),
-      },
-    });
-  } catch (err) {
-    console.error("[instagram] token refresh failed:", err);
+    try {
+      const accessToken = decryptSecret(conn.accessToken);
+      const res = await fetch(
+        `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${accessToken}`
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      await prisma.instagramConnection.update({
+        where: { id: conn.id },
+        data: {
+          accessToken: encryptSecret(json.access_token),
+          tokenExpiresAt: new Date(Date.now() + (json.expires_in || 5184000) * 1000),
+          lastRefreshAt: new Date(),
+        },
+      });
+    } catch (err) {
+      console.error(`[instagram] token refresh failed for connection ${conn.id}:`, err);
+    }
   }
 }
 
@@ -207,9 +227,8 @@ export type InstagramMedia = {
 // Pulls the account's media, newest first. `after` is a Graph API paging
 // cursor; omit it to start from the top. Capped per call by the caller
 // (see syncInstagramContent in content-performance.ts) rather than here.
-export async function fetchInstagramMedia(limit = 25): Promise<InstagramMedia[]> {
-  const conn = await getConnection();
-  if (!conn) throw new Error("Instagram isn't connected yet.");
+export async function fetchInstagramMedia(connectionId: string, limit = 25): Promise<InstagramMedia[]> {
+  const conn = await getConnectionById(connectionId);
   const accessToken = decryptSecret(conn.accessToken);
 
   const fields = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
@@ -266,9 +285,8 @@ async function fetchMediaInsights(mediaId: string, accessToken: string): Promise
   return { views: null, likes: null, comments: null, shares: null, saves: null };
 }
 
-export async function fetchInstagramInsightsFor(mediaId: string): Promise<InstagramInsights> {
-  const conn = await getConnection();
-  if (!conn) throw new Error("Instagram isn't connected yet.");
+export async function fetchInstagramInsightsFor(connectionId: string, mediaId: string): Promise<InstagramInsights> {
+  const conn = await getConnectionById(connectionId);
   const accessToken = decryptSecret(conn.accessToken);
   return fetchMediaInsights(mediaId, accessToken);
 }
@@ -289,9 +307,8 @@ export async function downloadInstagramVideo(mediaUrl: string): Promise<Buffer> 
 // container from the video URL, poll until Instagram finishes processing
 // it, then publish the container. Returns the new post's Instagram media
 // id so the caller can link it back to a ContentPost row.
-export async function publishInstagramReel(videoUrl: string, caption: string): Promise<string> {
-  const conn = await getConnection();
-  if (!conn) throw new Error("Instagram isn't connected yet.");
+export async function publishInstagramReel(connectionId: string, videoUrl: string, caption: string): Promise<string> {
+  const conn = await getConnectionById(connectionId);
   const accessToken = decryptSecret(conn.accessToken);
 
   const createRes = await fetch(`${GRAPH_HOST}/${GRAPH_VERSION}/${conn.igUserId}/media`, {

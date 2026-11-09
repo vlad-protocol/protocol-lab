@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ContentEnginePage() {
   await requireAccess("content_engine");
 
-  const [ideas, scripts, posts, carousels, instagramConnection] = await Promise.all([
+  const [ideas, scripts, posts, carousels, instagramAccounts] = await Promise.all([
     prisma.contentIdea.findMany({
       include: { scripts: { select: { id: true, title: true, status: true } } },
       orderBy: { createdAt: "desc" },
@@ -26,6 +26,7 @@ export default async function ContentEnginePage() {
       include: {
         script: { select: { id: true, title: true, hook: true } },
         instagramPost: { select: { id: true, permalink: true, thumbnailUrl: true, views: true, likes: true } },
+        instagramConnection: { select: { id: true, username: true, label: true } },
       },
       orderBy: { scheduledFor: "asc" },
     }),
@@ -36,7 +37,10 @@ export default async function ContentEnginePage() {
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.instagramConnection.findFirst({ orderBy: { connectedAt: "desc" } }),
+    prisma.instagramConnection.findMany({
+      orderBy: { connectedAt: "desc" },
+      select: { id: true, igUserId: true, username: true, label: true },
+    }),
   ]);
 
   // Candidate posts to repurpose: your own synced Reels, best performers first.
@@ -67,7 +71,7 @@ export default async function ContentEnginePage() {
           initialPosts={JSON.parse(JSON.stringify(posts))}
           initialCarousels={JSON.parse(JSON.stringify(carousels))}
           topPosts={JSON.parse(JSON.stringify(topPosts))}
-          instagramConnected={!!instagramConnection}
+          instagramAccounts={JSON.parse(JSON.stringify(instagramAccounts))}
           instagramConfigured={isInstagramConfigured()}
           aiConfigured={isContentEngineAiConfigured()}
         />
