@@ -13,7 +13,9 @@ export async function POST(req: Request) {
     // fetching it requires your Twilio credentials — see the Comms page.
     await prisma.interaction.update({
       where: { id: interaction.id },
-      data: { recordingUrl: `${recordingUrl}.mp3` },
+      // transcriptStatus: PENDING kicks off speaker-diarized transcription
+      // on the next background tick — see lib/call-transcription.ts.
+      data: { recordingUrl: `${recordingUrl}.mp3`, transcriptStatus: "PENDING" },
     });
   }
 

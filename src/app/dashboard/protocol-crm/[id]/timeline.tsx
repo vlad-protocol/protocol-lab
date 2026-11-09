@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { EmailInteractionModal } from "./email-interaction-modal";
 
 type Interaction = {
@@ -17,6 +17,9 @@ type Interaction = {
   recordingUrl: string | null;
   externalId: string | null;
   occurredAt: string;
+  transcript: string | null;
+  transcriptStatus: "PENDING" | "PROCESSING" | "DONE" | "FAILED" | "SKIPPED" | null;
+  transcriptError: string | null;
   user: { id: string; name: string | null; email: string } | null;
 };
 
@@ -56,6 +59,7 @@ export function Timeline({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [viewingEmailId, setViewingEmailId] = useState<string | null>(null);
   const [repPhone, setRepPhone] = useState("");
+  const [expandedTranscriptId, setExpandedTranscriptId] = useState<string | null>(null);
 
   function closeAndRefresh() {
     setTab(null);
@@ -459,6 +463,26 @@ export function Timeline({
                       {i.type === "VIDEO_CALL" ? "Watch recording" : "Play recording"}
                     </a>
                   )}
+                  {(i.transcriptStatus === "PENDING" || i.transcriptStatus === "PROCESSING") && (
+                    <span className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
+                    </span>
+                  )}
+                  {i.transcriptStatus === "FAILED" && (
+                    <span className="text-red-600" title={i.transcriptError || undefined}>
+                      Transcription failed
+                    </span>
+                  )}
+                  {i.transcriptStatus === "DONE" && i.transcript && (
+                    <button
+                      onClick={() => setExpandedTranscriptId(expandedTranscriptId === i.id ? null : i.id)}
+                      className="flex items-center gap-1 font-medium text-[var(--hq-accent)] hover:underline"
+                    >
+                      <FileText className="h-3 w-3" />
+                      {expandedTranscriptId === i.id ? "Hide transcript" : "View transcript"}
+                      {expandedTranscriptId === i.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                  )}
                   {i.type === "EMAIL" && i.externalId && (
                     <button
                       onClick={() => setViewingEmailId(i.id)}
@@ -468,6 +492,13 @@ export function Timeline({
                     </button>
                   )}
                 </div>
+                {expandedTranscriptId === i.id && i.transcript && (
+                  <div className="mt-2 max-h-72 overflow-y-auto rounded-md border border-[var(--hq-card-border)] bg-[var(--hq-canvas)] p-3">
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--hq-text-muted)]">
+                      {i.transcript}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           );

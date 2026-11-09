@@ -283,6 +283,16 @@ model Interaction {
   occurredAt      DateTime             @default(now())
   createdAt       DateTime             @default(now())
 
+  // Speaker-diarized transcript of a recorded phone call (see
+  // integrations/assemblyai.ts + lib/call-transcription.ts). Only ever set
+  // for CALL interactions that went through Twilio's recorded-call flow —
+  // null/not-set for everything else (manual logs, video calls with a
+  // pasted link, etc.), so this never shows a "transcribing..." state for
+  // interactions that were never going to have one.
+  transcript       String?
+  transcriptStatus TranscriptStatus?
+  transcriptError  String?
+
   // Set only when this Interaction IS a sequence step's send (see
   // runDueSequenceSteps in sequences.ts and sendConfirmedDraft in
   // sequence-drafts.ts) — lets the lead page show exactly when each step

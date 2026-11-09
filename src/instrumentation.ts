@@ -25,6 +25,7 @@ export async function register() {
   const { syncInstagramContent, transcribePendingPosts, categorizePendingPosts, syncZeffySales } = await import(
     "@/lib/content-performance"
   );
+  const { transcribePendingCallRecordings } = await import("@/lib/call-transcription");
 
   let lastContentSyncAt = 0;
 
@@ -133,6 +134,20 @@ export async function register() {
       }
     } catch (err) {
       console.error("[performance] categorization background run failed:", err);
+    }
+
+    try {
+      // Speaker-diarized transcripts for recorded phone calls — small
+      // batch per tick, same reasoning as reel transcription above (real
+      // money/time per call). See lib/call-transcription.ts.
+      const callsTranscribed = await transcribePendingCallRecordings();
+      if (callsTranscribed.length > 0) {
+        console.log(
+          `[calls] transcribed ${callsTranscribed.filter((r) => !r.error).length}/${callsTranscribed.length} recordings`
+        );
+      }
+    } catch (err) {
+      console.error("[calls] call transcription background run failed:", err);
     }
   };
 
