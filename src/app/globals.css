@@ -30,10 +30,15 @@
   --hq-radius: 12px;
   --hq-radius-md: 8px;
   --hq-shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 1px 0 rgba(0, 0, 0, 0.5);
-  --hq-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(245, 129, 31, 0.25),
-    0 8px 24px -8px rgba(245, 129, 31, 0.18);
-  --hq-shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 1px rgba(245, 129, 31, 0.4),
-    0 4px 20px -2px rgba(245, 129, 31, 0.5);
+  /* Toned down from a first pass that read as neon/blown-out — this glow
+     convention (bg-[var(--hq-text)]) gets applied to small, frequently-
+     active elements like toggle pills and tab bars, not just occasional
+     CTA buttons, so it needed to stay subtle at any size rather than
+     being tuned for a single big "primary button" moment. */
+  --hq-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(245, 129, 31, 0.15),
+    0 6px 16px -10px rgba(245, 129, 31, 0.12);
+  --hq-shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(245, 129, 31, 0.22),
+    0 2px 10px -4px rgba(245, 129, 31, 0.22);
 }
 
 /* Card surfaces across the app consistently use this Tailwind
