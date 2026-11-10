@@ -86,16 +86,16 @@ export const STATUS_STYLE: Record<LeadStatus, string> = {
 // The column-top accent bar color in the Kanban board (matches STATUS_STYLE
 // but as a solid bar color rather than a chip background).
 export const STATUS_BAR: Record<LeadStatus, string> = {
-  NEW_LEAD: "bg-neutral-400",
-  CONTACTED_ONCE: "bg-blue-500",
-  FOLLOW_UP_1: "bg-indigo-500",
-  FOLLOW_UP_2: "bg-purple-500",
-  FOLLOW_UP_LAST: "bg-fuchsia-500",
-  STALE: "bg-neutral-400",
-  MEETING_BOOKED: "bg-cyan-500",
-  NEGOTIATING: "bg-amber-500",
-  WON: "bg-emerald-500",
-  LOST: "bg-red-500",
+  NEW_LEAD: "hq-bar-neutral",
+  CONTACTED_ONCE: "hq-bar-blue",
+  FOLLOW_UP_1: "hq-bar-indigo",
+  FOLLOW_UP_2: "hq-bar-violet",
+  FOLLOW_UP_LAST: "hq-bar-fuchsia",
+  STALE: "hq-bar-neutral",
+  MEETING_BOOKED: "hq-bar-cyan",
+  NEGOTIATING: "hq-bar-amber",
+  WON: "hq-bar-emerald",
+  LOST: "hq-bar-red",
 };
 
 export const PRIORITY_STYLE: Record<LeadPriority, string> = {

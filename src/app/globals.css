@@ -24,8 +24,11 @@
   --hq-text-muted: #8a8a8a;
   --hq-accent: #f5811f;
   --hq-accent-soft: #2a1d0f;
-  --hq-positive: #4ade80;
-  --hq-negative: #f87171;
+  /* Matched to the same muted badge palette below (not the brighter
+     default Tailwind green/red) so a stat delta and a status badge read
+     as one consistent color language instead of two different "greens". */
+  --hq-positive: #5fb88a;
+  --hq-negative: #d9726a;
 
   --hq-radius: 12px;
   --hq-radius-md: 8px;
@@ -86,22 +89,80 @@ textarea::placeholder {
   color: var(--hq-text-muted);
 }
 
-/* Status badges/warning boxes across the app use literal pale Tailwind
-   utilities (bg-emerald-50 + text-emerald-700, etc.) sized for a light
-   canvas — overridden here to translucent, dark-appropriate versions of
-   the same colors so every badge stays legible without editing each
-   component. */
-.bg-emerald-50 { background-color: rgba(34, 197, 94, 0.14) !important; }
-.text-emerald-700, .text-emerald-800 { color: #4ade80 !important; }
-.bg-red-50 { background-color: rgba(239, 68, 68, 0.14) !important; }
-.text-red-600, .text-red-700, .text-red-800 { color: #f87171 !important; }
-.border-red-200 { border-color: rgba(239, 68, 68, 0.35) !important; }
-.bg-amber-50 { background-color: rgba(245, 158, 11, 0.14) !important; }
-.text-amber-700, .text-amber-800 { color: #fbbf24 !important; }
-.border-amber-200 { border-color: rgba(245, 158, 11, 0.35) !important; }
-.bg-blue-50 { background-color: rgba(59, 130, 246, 0.14) !important; }
-.text-blue-700, .text-blue-800 { color: #60a5fa !important; }
-.border-blue-200 { border-color: rgba(59, 130, 246, 0.35) !important; }
+/* Status/type/priority badges across the app (CRM pipeline stages, lead
+   type, priority, CFO alerts, etc.) use literal pale Tailwind utilities
+   (bg-emerald-50 + text-emerald-700, border-emerald-200, etc.) sized for
+   a light canvas. A first pass covered only the 4 hues used by the parts
+   of the app built first (emerald/red/amber/blue) — everything else
+   (violet, purple, indigo, fuchsia, cyan, orange, pink/rose), plus a few
+   missed shades even within those 4, rendered completely unstyled: a
+   near-white -50 chip background with a vivid, fully-saturated -700
+   text color sitting on top of it, which is what actually reads as
+   "oversaturated" against a near-black canvas — it's not that any one
+   color is wrong, it's a light-mode pastel-chip pattern that was never
+   adapted for dark at all. Covers every hue actually used in the app
+   (see STATUS_STYLE/TYPE_STYLE/PRIORITY_STYLE in protocol-crm/types.ts
+   for where most of these come from) with one muted, legible color per
+   hue family — deliberately desaturated further than the first pass's
+   amber/blue (those still read a little neon on review) — plus the pale
+   -50/-100 badge background and -200/-300 badge border every hue needs.
+   Solid, non-badge uses of these same color families (a confirm button,
+   a progress-bar fill, a notification dot) are intentionally left alone
+   — those want to stay a solid, recognizable color, not go translucent. */
+
+/* green / emerald */
+.bg-emerald-50, .bg-emerald-100 { background-color: rgba(95, 184, 138, 0.14) !important; }
+.text-emerald-500, .text-emerald-600, .text-emerald-700, .text-emerald-800 { color: #5fb88a !important; }
+.border-emerald-200, .border-emerald-300 { border-color: rgba(95, 184, 138, 0.32) !important; }
+
+/* red / rose */
+.bg-red-50, .bg-red-100 { background-color: rgba(217, 114, 106, 0.14) !important; }
+.text-red-500, .text-red-600, .text-red-700, .text-red-800 { color: #d9726a !important; }
+.border-red-200, .border-red-300 { border-color: rgba(217, 114, 106, 0.32) !important; }
+.bg-rose-50, .bg-rose-100 { background-color: rgba(217, 114, 106, 0.14) !important; }
+.text-rose-600, .text-rose-700, .text-rose-800 { color: #d9726a !important; }
+
+/* amber / yellow / orange */
+.bg-amber-50, .bg-amber-100 { background-color: rgba(207, 157, 82, 0.14) !important; }
+.text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900 { color: #cf9d52 !important; }
+.border-amber-200, .border-amber-300 { border-color: rgba(207, 157, 82, 0.32) !important; }
+.bg-orange-50, .bg-orange-100 { background-color: rgba(207, 157, 82, 0.14) !important; }
+.text-orange-500, .text-orange-600, .text-orange-700 { color: #cf9d52 !important; }
+.border-orange-200, .border-orange-300 { border-color: rgba(207, 157, 82, 0.32) !important; }
+
+/* blue / sky */
+.bg-blue-50, .bg-blue-100 { background-color: rgba(111, 147, 201, 0.14) !important; }
+.text-blue-500, .text-blue-600, .text-blue-700, .text-blue-800 { color: #6f93c9 !important; }
+.border-blue-200, .border-blue-300 { border-color: rgba(111, 147, 201, 0.32) !important; }
+
+/* indigo */
+.bg-indigo-50, .bg-indigo-100 { background-color: rgba(128, 133, 199, 0.14) !important; }
+.text-indigo-500, .text-indigo-600, .text-indigo-700, .text-indigo-800 { color: #8085c7 !important; }
+.border-indigo-200, .border-indigo-300 { border-color: rgba(128, 133, 199, 0.32) !important; }
+
+/* violet / purple */
+.bg-violet-50, .bg-violet-100 { background-color: rgba(156, 130, 201, 0.14) !important; }
+.text-violet-500, .text-violet-600, .text-violet-700, .text-violet-800 { color: #9c82c9 !important; }
+.border-violet-200, .border-violet-300 { border-color: rgba(156, 130, 201, 0.32) !important; }
+.bg-purple-50, .bg-purple-100 { background-color: rgba(156, 130, 201, 0.14) !important; }
+.text-purple-500, .text-purple-600, .text-purple-700, .text-purple-800 { color: #9c82c9 !important; }
+.border-purple-200, .border-purple-300 { border-color: rgba(156, 130, 201, 0.32) !important; }
+
+/* fuchsia / pink */
+.bg-fuchsia-50, .bg-fuchsia-100 { background-color: rgba(193, 126, 173, 0.14) !important; }
+.text-fuchsia-500, .text-fuchsia-600, .text-fuchsia-700, .text-fuchsia-800 { color: #c17ead !important; }
+.border-fuchsia-200, .border-fuchsia-300 { border-color: rgba(193, 126, 173, 0.32) !important; }
+.bg-pink-50, .bg-pink-100 { background-color: rgba(193, 126, 173, 0.14) !important; }
+.text-pink-500, .text-pink-600, .text-pink-700, .text-pink-800 { color: #c17ead !important; }
+.border-pink-200, .border-pink-300 { border-color: rgba(193, 126, 173, 0.32) !important; }
+
+/* cyan / teal */
+.bg-cyan-50, .bg-cyan-100 { background-color: rgba(79, 163, 171, 0.14) !important; }
+.text-cyan-500, .text-cyan-600, .text-cyan-700, .text-cyan-800 { color: #4fa3ab !important; }
+.border-cyan-200, .border-cyan-300 { border-color: rgba(79, 163, 171, 0.32) !important; }
+.bg-teal-50, .bg-teal-100 { background-color: rgba(79, 163, 171, 0.14) !important; }
+.text-teal-500, .text-teal-600, .text-teal-700, .text-teal-800 { color: #4fa3ab !important; }
+.border-teal-200, .border-teal-300 { border-color: rgba(79, 163, 171, 0.32) !important; }
 
 /* Protocol Lab wordmark + sidebar section labels get a touch of
    Ripping's colorful-gradient-on-key-word treatment. */
@@ -131,6 +192,23 @@ textarea::placeholder {
   height: 13px;
   color: #fff;
 }
+
+/* Kanban column top bars (STATUS_BAR in protocol-crm/types.ts) are a
+   solid 4px accent stripe, not a translucent badge — they need to stay
+   solid to read as a bar at all, so they get their own muted-but-solid
+   classes here instead of the translucent badge treatment above. Same
+   hue family, same muted palette, just solid. Nine of these sitting
+   side by side at full Tailwind -500 saturation (the board's default
+   view) was one of the more obvious "oversaturated" spots in the app. */
+.hq-bar-neutral { background-color: #5a5a5e; }
+.hq-bar-blue { background-color: #6f93c9; }
+.hq-bar-indigo { background-color: #8085c7; }
+.hq-bar-violet { background-color: #9c82c9; }
+.hq-bar-fuchsia { background-color: #c17ead; }
+.hq-bar-cyan { background-color: #4fa3ab; }
+.hq-bar-amber { background-color: #cf9d52; }
+.hq-bar-emerald { background-color: #5fb88a; }
+.hq-bar-red { background-color: #d9726a; }
 
 @theme inline {
   --color-background: var(--background);
