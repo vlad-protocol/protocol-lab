@@ -38,13 +38,39 @@ export async function PATCH(
   }
   const { id, interactionId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { callStageReached, resultTag, objectionHeard, objectionAttempts, lastQuestionAsked } = body as {
+  const {
+    callStageReached,
+    resultTag,
+    objectionHeard,
+    objectionAttempts,
+    lastQuestionAsked,
+    subject,
+    body: content,
+    transcript,
+    occurredAt,
+  } = body as {
     callStageReached?: string | null;
     resultTag?: string;
     objectionHeard?: string | null;
     objectionAttempts?: number;
     lastQuestionAsked?: boolean;
+    // General content edit — "fat-fingered a note", a correction to a
+    // pasted/auto-generated transcript, fixing an email subject line,
+    // etc. Open to every interaction type, unlike the call-outcome
+    // fields above which only ever make sense on a CALL.
+    subject?: string | null;
+    body?: string | null;
+    transcript?: string | null;
+    // When it actually happened — ISO string. Vlad logs things after the
+    // fact sometimes and needs to correct the timestamp, not just the
+    // content.
+    occurredAt?: string;
   };
+
+  const hasOutcomeEdit =
+    callStageReached !== undefined || resultTag !== undefined || objectionHeard !== undefined ||
+    objectionAttempts !== undefined || lastQuestionAsked !== undefined;
+  const hasContentEdit = subject !== undefined || content !== undefined || transcript !== undefined || occurredAt !== undefined;
 
   if (callStageReached !== null && callStageReached !== undefined && !VALID_STAGES.has(callStageReached)) {
     return NextResponse.json({ error: "Invalid call stage." }, { status: 400 });
@@ -52,13 +78,23 @@ export async function PATCH(
   if (resultTag !== undefined && !VALID_RESULT_TAGS.has(resultTag)) {
     return NextResponse.json({ error: "Invalid result tag." }, { status: 400 });
   }
+  let parsedOccurredAt: Date | undefined;
+  if (occurredAt !== undefined) {
+    parsedOccurredAt = new Date(occurredAt);
+    if (Number.isNaN(parsedOccurredAt.getTime())) {
+      return NextResponse.json({ error: "Invalid date/time." }, { status: 400 });
+    }
+  }
 
   const interaction = await prisma.interaction.findUnique({ where: { id: interactionId } });
   if (!interaction || interaction.contactId !== id) {
     return NextResponse.json({ error: "Interaction not found." }, { status: 404 });
   }
-  if (interaction.type !== "CALL") {
+  if (hasOutcomeEdit && interaction.type !== "CALL") {
     return NextResponse.json({ error: "Only calls can have an outcome." }, { status: 400 });
+  }
+  if (!hasOutcomeEdit && !hasContentEdit) {
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
   const updated = await prisma.interaction.update({
@@ -69,8 +105,19 @@ export async function PATCH(
       ...(objectionHeard !== undefined ? { objectionHeard: objectionHeard || null } : {}),
       ...(objectionAttempts !== undefined ? { objectionAttempts } : {}),
       ...(lastQuestionAsked !== undefined ? { lastQuestionAsked } : {}),
+      ...(subject !== undefined ? { subject: subject || null } : {}),
+      ...(content !== undefined ? { body: content || null } : {}),
+      ...(transcript !== undefined ? { transcript: transcript || null } : {}),
+      ...(parsedOccurredAt !== undefined ? { occurredAt: parsedOccurredAt } : {}),
     },
   });
+
+  // Editing when something happened can change which row is the
+  // earliest/latest touch for this lead — recompute rather than leave
+  // dateFirstContacted/lastContactDate pointing at the wrong entry.
+  if (parsedOccurredAt !== undefined && isTouchInteraction(interaction.type, interaction.direction)) {
+    await recomputeContactTouches(id);
+  }
 
   return NextResponse.json({ interaction: { ...updated, occurredAt: updated.occurredAt.toISOString() } });
 }

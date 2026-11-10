@@ -20,6 +20,63 @@ type Call = {
 
 type PatternTag = { key: string; label: string; count: number };
 type Patterns = { analyzedCount: number; totalCount: number; issues: PatternTag[]; strengths: PatternTag[] };
+type PatternsByKind = { coldCall: Patterns; discovery: Patterns };
+
+function PatternPanel({ title, goal, patterns }: { title: string; goal: string; patterns: Patterns }) {
+  if (patterns.issues.length === 0 && patterns.strengths.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
+      <p className="text-sm font-semibold text-[var(--hq-text)]">
+        {title}
+        <span className="ml-2 text-xs font-normal text-[var(--hq-text-muted)]">
+          across {patterns.analyzedCount} analyzed call{patterns.analyzedCount === 1 ? "" : "s"}
+          {patterns.totalCount > patterns.analyzedCount ? ` (${patterns.totalCount - patterns.analyzedCount} not analyzed yet)` : ""}
+        </span>
+      </p>
+      <p className="mt-0.5 text-xs text-[var(--hq-text-muted)]">{goal}</p>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="flex items-center gap-1 text-xs font-medium text-red-600">
+            <ThumbsDown className="h-3.5 w-3.5" /> Keeps going wrong
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {patterns.issues.length === 0 && (
+              <span className="text-xs text-[var(--hq-text-muted)]">Nothing recurring yet.</span>
+            )}
+            {patterns.issues.map((t) => (
+              <span
+                key={t.key}
+                className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
+                title={t.label}
+              >
+                {t.label} ×{t.count}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+            <ThumbsUp className="h-3.5 w-3.5" /> Keeps going well
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {patterns.strengths.length === 0 && (
+              <span className="text-xs text-[var(--hq-text-muted)]">Nothing recurring yet.</span>
+            )}
+            {patterns.strengths.map((t) => (
+              <span
+                key={t.key}
+                className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                title={t.label}
+              >
+                {t.label} ×{t.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -30,7 +87,7 @@ const STARTER_PROMPTS = [
   "Write a short follow-up email based on this call.",
 ];
 
-export function SalesCoachView({ calls: initialCalls, patterns }: { calls: Call[]; patterns: Patterns }) {
+export function SalesCoachView({ calls: initialCalls, patterns }: { calls: Call[]; patterns: PatternsByKind }) {
   const router = useRouter();
   const [calls, setCalls] = useState(initialCalls);
   const [selectedId, setSelectedId] = useState<string | null>(initialCalls[0]?.id || null);
@@ -118,57 +175,16 @@ export function SalesCoachView({ calls: initialCalls, patterns }: { calls: Call[
 
   return (
     <div className="space-y-4">
-      {(patterns.issues.length > 0 || patterns.strengths.length > 0) && (
-        <div className="rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
-          <p className="text-sm font-semibold text-[var(--hq-text)]">
-            Recurring patterns
-            <span className="ml-2 text-xs font-normal text-[var(--hq-text-muted)]">
-              across {patterns.analyzedCount} analyzed call{patterns.analyzedCount === 1 ? "" : "s"}
-              {patterns.totalCount > patterns.analyzedCount ? ` (${patterns.totalCount - patterns.analyzedCount} not analyzed yet)` : ""}
-            </span>
-          </p>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="flex items-center gap-1 text-xs font-medium text-red-600">
-                <ThumbsDown className="h-3.5 w-3.5" /> Keeps going wrong
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {patterns.issues.length === 0 && (
-                  <span className="text-xs text-[var(--hq-text-muted)]">Nothing recurring yet.</span>
-                )}
-                {patterns.issues.map((t) => (
-                  <span
-                    key={t.key}
-                    className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
-                    title={t.label}
-                  >
-                    {t.label} ×{t.count}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="flex items-center gap-1 text-xs font-medium text-emerald-600">
-                <ThumbsUp className="h-3.5 w-3.5" /> Keeps going well
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {patterns.strengths.length === 0 && (
-                  <span className="text-xs text-[var(--hq-text-muted)]">Nothing recurring yet.</span>
-                )}
-                {patterns.strengths.map((t) => (
-                  <span
-                    key={t.key}
-                    className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
-                    title={t.label}
-                  >
-                    {t.label} ×{t.count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PatternPanel
+        title="Cold call patterns"
+        goal="Goal of a cold call: get booked on the video call — not to close."
+        patterns={patterns.coldCall}
+      />
+      <PatternPanel
+        title="Video call patterns"
+        goal="Goal of a video call: close the deal — the cold call already got them here."
+        patterns={patterns.discovery}
+      />
 
       <div className="grid gap-4 md:grid-cols-[280px_1fr]">
         <div className="space-y-1.5">

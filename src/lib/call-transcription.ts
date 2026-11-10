@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getTwilioConfig } from "@/lib/integrations/twilio";
 import { isCallTranscriptionConfigured, transcribeRecording, transcribeAudioBuffer } from "@/lib/integrations/assemblyai";
+import { analyzeInteraction } from "@/lib/sales-coach";
 
 // A recordingUrl in this form points at a locally-stored recording (the
 // "Record live call" button on a lead's timeline — see
@@ -42,6 +43,16 @@ async function transcribeOne(interaction: Interaction, twilioConfig: Awaited<Ret
       where: { id: interaction.id },
       data: { transcript, transcriptStatus: "DONE", transcriptError: null },
     });
+    // Feed it straight to the Sales Coach the moment a transcript lands
+    // — Vlad shouldn't have to remember to click "Analyze" for every
+    // call. Fire-and-forget: a slow or failed coaching pass should never
+    // hold up the transcription pipeline (the manual "Re-analyze" button
+    // is still there if this silently fails, e.g. no ANTHROPIC_API_KEY).
+    if (interaction.type === "CALL" || interaction.type === "VIDEO_CALL") {
+      analyzeInteraction(interaction.id).catch((err) => {
+        console.error(`[call-transcription] auto-analyze failed for ${interaction.id}:`, err);
+      });
+    }
     return { id: interaction.id };
   } catch (err) {
     const error = err instanceof Error ? err.message : "transcription failed";
@@ -95,7 +106,11 @@ export async function transcribePendingCallRecordings(batchSize = 3) {
       data: { transcriptStatus: "PROCESSING" },
     });
     if (claimed.count === 0) continue;
-    results.push(await transcribeOne(interaction, twilioConfig));
+    const result = await transcribeOne(interaction, twilioConfig);
+    if (result.error) {
+      console.error(`[call-transcription] ${interaction.id} failed:`, result.error);
+    }
+    results.push(result);
   }
   return results;
 }

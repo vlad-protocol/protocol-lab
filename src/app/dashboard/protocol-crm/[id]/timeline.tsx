@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp, Trash2, Mic, Square } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp, Trash2, Mic, Square, Pencil, X, Check } from "lucide-react";
 import { EmailInteractionModal } from "./email-interaction-modal";
 
 type Interaction = {
@@ -87,6 +87,10 @@ export function Timeline({
   const [expandedTranscriptId, setExpandedTranscriptId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [outcomeUpdatingId, setOutcomeUpdatingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ subject: "", body: "", transcript: "", occurredAt: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // "Record live call" — capture audio through the phone's own mic while
   // Vlad is on a native call on speaker, not dialed through Twilio at all.
@@ -203,6 +207,60 @@ export function Timeline({
     } else {
       const d = await res.json().catch(() => ({}));
       setError(d.error || "Couldn't delete this entry.");
+    }
+  }
+
+  // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in the
+  // viewer's local time, with no timezone suffix — build that from the
+  // Date's local getters (not toISOString, which is UTC).
+  function toLocalDateTimeInput(iso: string) {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function startEdit(i: Interaction) {
+    setEditingId(i.id);
+    setEditError(null);
+    setEditForm({
+      subject: i.subject || "",
+      body: i.body || "",
+      transcript: i.transcript || "",
+      occurredAt: toLocalDateTimeInput(i.occurredAt),
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditError(null);
+  }
+
+  async function saveEdit(i: Interaction) {
+    setEditSaving(true);
+    setEditError(null);
+    const payload: Record<string, unknown> = {
+      body: editForm.body || null,
+      occurredAt: new Date(editForm.occurredAt).toISOString(),
+    };
+    // Subject only makes sense for types that show one (email, or a note
+    // someone titled); transcript only for calls/video calls — but it's
+    // harmless to always send both since the row simply has no value for
+    // the ones that don't use it.
+    if (i.subject !== null || editForm.subject) payload.subject = editForm.subject || null;
+    if (i.transcript !== null || editForm.transcript) payload.transcript = editForm.transcript || null;
+
+    const res = await fetch(`/api/contacts/${contactId}/interactions/${i.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    setEditSaving(false);
+    if (res.ok) {
+      setEditingId(null);
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setEditError(d.error || "Couldn't save your changes.");
     }
   }
 
@@ -681,21 +739,96 @@ export function Timeline({
                     <p className="text-xs text-[var(--hq-text-muted)]">
                       {new Date(i.occurredAt).toLocaleString()}
                     </p>
-                    <button
-                      onClick={() => deleteInteraction(i.id)}
-                      disabled={deletingId === i.id}
-                      title="Delete this entry"
-                      className="opacity-0 transition group-hover:opacity-100 disabled:opacity-100"
-                    >
-                      {deletingId === i.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--hq-text-muted)]" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5 text-neutral-500 hover:text-red-500" />
-                      )}
-                    </button>
+                    {editingId !== i.id && (
+                      <>
+                        <button
+                          onClick={() => startEdit(i)}
+                          title="Edit this entry"
+                          className="opacity-0 transition group-hover:opacity-100"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-neutral-500 hover:text-[var(--hq-accent)]" />
+                        </button>
+                        <button
+                          onClick={() => deleteInteraction(i.id)}
+                          disabled={deletingId === i.id}
+                          title="Delete this entry"
+                          className="opacity-0 transition group-hover:opacity-100 disabled:opacity-100"
+                        >
+                          {deletingId === i.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--hq-text-muted)]" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5 text-neutral-500 hover:text-red-500" />
+                          )}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-                {i.body && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--hq-text-muted)]">{i.body}</p>}
+                {editingId === i.id ? (
+                  <div className="mt-2 space-y-2 rounded-lg border border-[var(--hq-accent)] bg-[var(--hq-canvas)] p-3">
+                    <label className="block text-xs font-medium text-[var(--hq-text-muted)]">
+                      When
+                      <input
+                        type="datetime-local"
+                        value={editForm.occurredAt}
+                        onChange={(e) => setEditForm({ ...editForm, occurredAt: e.target.value })}
+                        className="mt-1 block w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text)]"
+                      />
+                    </label>
+                    {(i.type === "EMAIL" || i.subject !== null) && (
+                      <label className="block text-xs font-medium text-[var(--hq-text-muted)]">
+                        Subject
+                        <input
+                          type="text"
+                          value={editForm.subject}
+                          onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })}
+                          className="mt-1 block w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text)]"
+                        />
+                      </label>
+                    )}
+                    <label className="block text-xs font-medium text-[var(--hq-text-muted)]">
+                      Notes
+                      <textarea
+                        rows={3}
+                        value={editForm.body}
+                        onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
+                        className="mt-1 block w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm text-[var(--hq-text)]"
+                      />
+                    </label>
+                    {(i.type === "CALL" || i.type === "VIDEO_CALL") && (
+                      <label className="block text-xs font-medium text-[var(--hq-text-muted)]">
+                        Transcript
+                        <textarea
+                          rows={5}
+                          value={editForm.transcript}
+                          onChange={(e) => setEditForm({ ...editForm, transcript: e.target.value })}
+                          className="mt-1 block w-full rounded-md border border-[var(--hq-card-border)] px-2 py-1 font-mono text-xs text-[var(--hq-text)]"
+                        />
+                      </label>
+                    )}
+                    {editError && <p className="text-xs text-red-600">{editError}</p>}
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => saveEdit(i)}
+                        disabled={editSaving}
+                        className="flex items-center gap-1 rounded-md bg-[var(--hq-accent)] px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                      >
+                        {editSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                        Save
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        disabled={editSaving}
+                        className="flex items-center gap-1 rounded-md border border-[var(--hq-card-border)] px-3 py-1 text-xs font-medium text-[var(--hq-text-muted)]"
+                      >
+                        <X className="h-3 w-3" />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  i.body && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--hq-text-muted)]">{i.body}</p>
+                )}
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--hq-text-muted)]">
                   <span>{i.user?.name || i.user?.email || "Auto-logged"}</span>
                   {i.durationSeconds != null && <span>{Math.round(i.durationSeconds / 60)} min</span>}
