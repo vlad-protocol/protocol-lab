@@ -293,6 +293,18 @@ model Interaction {
   transcriptStatus TranscriptStatus?
   transcriptError  String?
 
+  // Persisted Sales Coach analysis — generated once per call (on demand,
+  // not automatically, since it's a real Claude call per call) and cached
+  // here so it survives the page reload the old chat-only version didn't.
+  // coachingStrengthTags/coachingIssueTags are picked from a fixed
+  // vocabulary (see lib/sales-coach-tags.ts) specifically so they can be
+  // counted/aggregated across every call into a recurring-pattern view,
+  // instead of a free-text tag that'd never match itself twice.
+  coachingNotes        String?
+  coachingStrengthTags String[]  @default([])
+  coachingIssueTags    String[]  @default([])
+  coachingGeneratedAt  DateTime?
+
   // Set only when this Interaction IS a sequence step's send (see
   // runDueSequenceSteps in sequences.ts and sendConfirmedDraft in
   // sequence-drafts.ts) — lets the lead page show exactly when each step

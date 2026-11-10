@@ -89,6 +89,9 @@ function buildSystemPrompt(interaction: {
   occurredAt: Date;
   durationSeconds: number | null;
   transcript: string | null;
+  coachingNotes: string | null;
+  coachingStrengthTags: string[];
+  coachingIssueTags: string[];
   contact: { companyName: string | null; contactName: string | null; status: string } | null;
 }) {
   const leadName = interaction.contact?.companyName || interaction.contact?.contactName || "this lead";
@@ -104,6 +107,10 @@ Transcript:
 ---
 ${interaction.transcript}
 ---
-
+${
+  interaction.coachingNotes
+    ? `\nA saved analysis already exists for this call — treat it as your own prior read, build on it rather than contradicting it unless the transcript clearly supports otherwise:\n"${interaction.coachingNotes}"\nTags already saved: ${[...interaction.coachingStrengthTags, ...interaction.coachingIssueTags].join(", ") || "none"}\n`
+    : ""
+}
 Be concrete and reference specific moments/quotes from the call rather than generic sales advice. When asked what went well or wrong, give a short, honest, specific readout — don't hedge or pad it with praise he didn't earn. When asked to draft a follow-up, write something he could actually send, grounded in what was actually discussed. Keep responses focused and reasonably short unless he asks for more depth.`;
 }
