@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   const body = await req.json();
-  const { type, direction, subject, body: text, durationSeconds, recordingUrl, occurredAt, transcript } =
+  const { type, direction, subject, body: text, durationSeconds, recordingUrl, occurredAt, transcript, callOutcome } =
     body as {
       type?: string;
       direction?: string;
@@ -26,6 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       recordingUrl?: string;
       occurredAt?: string;
       transcript?: string;
+      callOutcome?: string;
     };
 
   if (!type || !direction) {
@@ -58,6 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
       transcript: trimmedTranscript,
       transcriptStatus,
+      callOutcome: type === "CALL" && callOutcome ? (callOutcome as never) : null,
     },
   });
   if (isTouchInteraction(interaction.type, interaction.direction)) {

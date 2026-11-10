@@ -20,6 +20,7 @@ type Interaction = {
   transcript: string | null;
   transcriptStatus: "PENDING" | "PROCESSING" | "DONE" | "FAILED" | "SKIPPED" | null;
   transcriptError: string | null;
+  callOutcome: "NO_ANSWER" | "VOICEMAIL" | "CONNECTED_NOT_BOOKED" | "DEMO_BOOKED" | "RESCHEDULED" | null;
   user: { id: string; name: string | null; email: string } | null;
 };
 
@@ -30,6 +31,14 @@ const TYPE_LABEL: Record<Interaction["type"], string> = {
   TEXT: "Text",
   NOTE: "Note",
   VIDEO_CALL: "Video call",
+};
+
+const OUTCOME_LABEL: Record<NonNullable<Interaction["callOutcome"]>, string> = {
+  NO_ANSWER: "No answer",
+  VOICEMAIL: "Voicemail left",
+  CONNECTED_NOT_BOOKED: "Connected — no booking",
+  DEMO_BOOKED: "Demo booked",
+  RESCHEDULED: "Rescheduled",
 };
 
 type Tab = "note" | "call" | "video" | "text" | "email";
@@ -51,7 +60,7 @@ export function Timeline({
   const [error, setError] = useState<string | null>(null);
 
   const [noteForm, setNoteForm] = useState({ body: "" });
-  const [callForm, setCallForm] = useState({ direction: "OUTBOUND", durationSeconds: "", body: "" });
+  const [callForm, setCallForm] = useState({ direction: "OUTBOUND", durationSeconds: "", body: "", callOutcome: "" });
   const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "", transcript: "" });
   const [textForm, setTextForm] = useState({ to: contactPhone || "", body: "" });
   const [emailForm, setEmailForm] = useState({ to: contactEmail || "", subject: "", body: "" });
@@ -61,6 +70,7 @@ export function Timeline({
   const [repPhone, setRepPhone] = useState("");
   const [expandedTranscriptId, setExpandedTranscriptId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [outcomeUpdatingId, setOutcomeUpdatingId] = useState<string | null>(null);
 
   // "Record live call" — capture audio through the phone's own mic while
   // Vlad is on a native call on speaker, not dialed through Twilio at all.
@@ -108,8 +118,9 @@ export function Timeline({
       direction: callForm.direction,
       durationSeconds: Number(callForm.durationSeconds) || null,
       body: callForm.body,
+      callOutcome: callForm.callOutcome || null,
     });
-    setCallForm({ direction: "OUTBOUND", durationSeconds: "", body: "" });
+    setCallForm({ direction: "OUTBOUND", durationSeconds: "", body: "", callOutcome: "" });
   }
 
   async function submitVideo(e: React.FormEvent) {
@@ -144,6 +155,22 @@ export function Timeline({
     }
     setTextForm({ to: contactPhone || "", body: "" });
     closeAndRefresh();
+  }
+
+  async function setCallOutcome(interactionId: string, callOutcome: string | null) {
+    setOutcomeUpdatingId(interactionId);
+    const res = await fetch(`/api/contacts/${contactId}/interactions/${interactionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callOutcome }),
+    });
+    setOutcomeUpdatingId(null);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Couldn't update the call outcome.");
+    }
   }
 
   async function deleteInteraction(interactionId: string) {
@@ -446,6 +473,16 @@ export function Timeline({
                   value={callForm.body}
                   onChange={(e) => setCallForm({ ...callForm, body: e.target.value })}
                 />
+                <select
+                  className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
+                  value={callForm.callOutcome}
+                  onChange={(e) => setCallForm({ ...callForm, callOutcome: e.target.value })}
+                >
+                  <option value="">Outcome (optional) — shows up on the Sales dashboard</option>
+                  {Object.entries(OUTCOME_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
                 <button disabled={submitting} className="rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm font-medium text-[var(--hq-text)] disabled:opacity-50">
                   Log call manually
                 </button>
@@ -634,6 +671,26 @@ export function Timeline({
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--hq-text-muted)]">
                   <span>{i.user?.name || i.user?.email || "Auto-logged"}</span>
                   {i.durationSeconds != null && <span>{Math.round(i.durationSeconds / 60)} min</span>}
+                  {i.type === "CALL" && (
+                    <span className="flex items-center gap-1">
+                      <select
+                        value={i.callOutcome || ""}
+                        onChange={(e) => setCallOutcome(i.id, e.target.value || null)}
+                        disabled={outcomeUpdatingId === i.id}
+                        className={`rounded-full border px-2 py-0.5 text-xs ${
+                          i.callOutcome
+                            ? "border-[var(--hq-accent)] text-[var(--hq-accent)]"
+                            : "border-[var(--hq-card-border)] text-[var(--hq-text-muted)]"
+                        }`}
+                      >
+                        <option value="">Set outcome…</option>
+                        {Object.entries(OUTCOME_LABEL).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                      {outcomeUpdatingId === i.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                    </span>
+                  )}
                   {i.recordingUrl && (
                     <a href={i.recordingUrl} target="_blank" className="font-medium text-[var(--hq-accent)] hover:underline">
                       {i.type === "VIDEO_CALL" ? "Watch recording" : "Play recording"}

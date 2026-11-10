@@ -90,6 +90,7 @@ model User {
   contentScriptsCreated   ContentScript[]
   contentPostsCreated     ContentPost[]
   contentCarouselsCreated ContentCarousel[]
+  salesScriptsUpdated     SalesScript[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -265,6 +266,17 @@ enum InteractionDirection {
   OUTBOUND
 }
 
+// Outcome of a logged CALL, for the Sales dashboard's call-tracking
+// metrics (calls made, connect rate, voicemails, demos booked, etc.) —
+// see lib/sales-metrics.ts.
+enum CallOutcome {
+  NO_ANSWER // dialed, nobody picked up, no voicemail left
+  VOICEMAIL // left a voicemail
+  CONNECTED_NOT_BOOKED // reached a person, no demo/next step booked
+  DEMO_BOOKED // reached a person, booked a video/demo call
+  RESCHEDULED // a previously booked demo was moved
+}
+
 model Interaction {
   id              String               @id @default(cuid())
   contactId       String
@@ -280,6 +292,12 @@ model Interaction {
   phoneNumber     String?
   durationSeconds Int?
   recordingUrl    String?
+  // Call-tracking outcome for the Sales dashboard (/dashboard/sales) — set
+  // either when manually logging a call, or tagged afterward on a
+  // Twilio-bridged or live-recorded call whose outcome wasn't known until
+  // after it happened. Only meaningful for type CALL; left null for every
+  // other interaction type.
+  callOutcome     CallOutcome?
   externalId      String? // Gmail message id / Twilio call or message sid, for de-duping syncs
   occurredAt      DateTime             @default(now())
   createdAt       DateTime             @default(now())
@@ -1653,4 +1671,24 @@ enum SopDocType {
   ROSTER
   SURVEY
   REPORT
+}
+
+// --- Sales (call-tracking dashboard) --------------------------------------
+
+// Quick-access reference material for the Sales dashboard — cold-call
+// script, demo/discovery-call script, objection responses, etc. Simple
+// and admin-editable for now (no version history yet); every rep can
+// read, only the owner edits (see api/sales/scripts).
+model SalesScript {
+  id        String   @id @default(cuid())
+  title     String
+  category  String // e.g. "Cold call", "Demo call", "Objections", "Follow-up"
+  body      String
+  sortOrder Int      @default(0)
+  updatedById String?
+  updatedBy   User?  @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category, sortOrder])
 }
