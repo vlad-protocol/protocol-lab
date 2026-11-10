@@ -57,21 +57,10 @@ INSERT INTO "SalesBenchmark" ("id", "metricKey", "label", "unit", "amberMin", "g
 
 -- 4. Seed the Scripts panel with the Playbook's actual script content
 --    (Protocol_Sales_Playbook.pdf, Nov 10 2026) so it's usable right
---    away. Owner can edit/add/remove from the dashboard afterward.
-CREATE TABLE "SalesScript" (
-    "id" TEXT NOT NULL,
-    "title" TEXT NOT NULL,
-    "category" TEXT NOT NULL,
-    "body" TEXT NOT NULL,
-    "sortOrder" INTEGER NOT NULL DEFAULT 0,
-    "updatedById" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "SalesScript_pkey" PRIMARY KEY ("id")
-);
-CREATE INDEX "SalesScript_category_sortOrder_idx" ON "SalesScript"("category", "sortOrder");
-ALTER TABLE "SalesScript" ADD CONSTRAINT "SalesScript_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+--    away. Owner can edit/add/remove from the dashboard afterward. The
+--    SalesScript table itself already exists (created by the prior
+--    20261110040000_sales_dashboard migration) — this migration only
+--    adds rows to it.
 
 
 -- Seed script content from the Playbook
