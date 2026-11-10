@@ -69,7 +69,10 @@ async function transcribeOne(interaction: Interaction, twilioConfig: Awaited<Ret
 //    Zoom-generated transcript directly instead, which skips this
 //    pipeline entirely (set straight to DONE on creation).
 // See instrumentation.ts for the tick that calls this on a 2-minute
-// cadence, and the speaker-diarization logic in integrations/assemblyai.ts.
+// cadence. Transcription itself runs locally (see integrations/assemblyai.ts,
+// which despite its filename now runs an open-source Whisper model
+// in-process instead of calling AssemblyAI) — no speaker labels, but no
+// external vendor or API key either.
 export async function transcribePendingCallRecordings(batchSize = 3) {
   if (!isCallTranscriptionConfigured()) return [];
 

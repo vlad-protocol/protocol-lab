@@ -1,19 +1,37 @@
-// Speaker-diarized transcription for recorded phone calls. Twilio records
-// the call (see integrations/twilio.ts) and hands us an mp3 URL; Claude's
-// Messages API has no audio input and Whisper (used for Instagram Reels,
-// see integrations/transcription.ts) has no speaker diarization, so this
-// is a second vendor: AssemblyAI, which tells speakers apart. Set
-// ASSEMBLYAI_API_KEY in Railway to enable it.
+// Speaker-free transcription for recorded phone calls, run entirely inside
+// this app's own Railway container — no external transcription vendor, no
+// API key, no per-call cost. Uses @huggingface/transformers (the JS port of
+// Hugging Face's transformers) running the open-source Whisper model
+// on CPU via onnxruntime, plus a bundled static ffmpeg binary to decode
+// whatever audio format the recording arrived in (Twilio mp3, or the
+// browser MediaRecorder's webm/opus from "Record live call") down to the
+// 16kHz mono PCM Whisper expects.
+//
+// Trade-off vs. the AssemblyAI version this replaced: no speaker
+// diarization (AssemblyAI could tell the rep and the lead apart; this
+// can't), and CPU inference is slower than a dedicated transcription API
+// — a model stays loaded in memory after first use so later calls are
+// fast, but the very first transcription after a deploy pays a one-time
+// model-download + load cost (model is cached to disk after that).
+//
+// File kept named assemblyai.ts (not renamed) so lib/call-transcription.ts,
+// which imports from here, didn't need touching — only these internals
+// changed.
 
-const BASE = "https://api.assemblyai.com/v2";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+// @ts-expect-error — ffmpeg-static ships no types; its default export is
+// the absolute path to a static ffmpeg binary for this platform.
+import ffmpegPath from "ffmpeg-static";
 
+// Self-hosted — nothing to configure. Kept as a function (not a const)
+// so callers don't need to change; it always returns true now.
 export function isCallTranscriptionConfigured() {
-  return !!process.env.ASSEMBLYAI_API_KEY;
+  return true;
 }
 
-// Twilio's recording URL requires your Twilio account's own credentials
-// (Basic auth) to fetch — AssemblyAI can't be pointed at it directly, so
-// we download the audio ourselves first and re-upload the bytes.
 async function downloadRecording(recordingUrl: string, basicAuth?: { username: string; password: string }): Promise<Buffer> {
   const headers: Record<string, string> = {};
   if (basicAuth) {
@@ -24,49 +42,67 @@ async function downloadRecording(recordingUrl: string, basicAuth?: { username: s
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function uploadToAssemblyAi(buffer: Buffer, apiKey: string): Promise<string> {
-  const res = await fetch(`${BASE}/upload`, {
-    method: "POST",
-    headers: { Authorization: apiKey },
-    body: new Uint8Array(buffer),
-  });
-  if (!res.ok) throw new Error(`AssemblyAI upload failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const json = await res.json();
-  return json.upload_url as string;
-}
-
-type AssemblyTranscript = {
-  status: "queued" | "processing" | "completed" | "error";
-  error?: string;
-  text?: string;
-  utterances?: { speaker: string; text: string }[];
-};
-
-async function pollTranscript(id: string, apiKey: string): Promise<AssemblyTranscript> {
-  const POLL_INTERVAL_MS = 3000;
-  const MAX_WAIT_MS = 5 * 60 * 1000; // a typical sales call finishes transcribing well within this
-  const start = Date.now();
-  while (Date.now() - start < MAX_WAIT_MS) {
-    const res = await fetch(`${BASE}/transcript/${id}`, { headers: { Authorization: apiKey } });
-    if (!res.ok) throw new Error(`AssemblyAI polling failed (${res.status}).`);
-    const json: AssemblyTranscript = await res.json();
-    if (json.status === "completed") return json;
-    if (json.status === "error") throw new Error(json.error || "AssemblyAI transcription failed.");
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+// Decodes whatever audio container/codec we were handed into raw 16kHz
+// mono PCM (as a Float32Array in [-1, 1]) using the bundled ffmpeg binary
+// — avoids needing a separate audio-decoding library per input format.
+async function decodeTo16kMonoPcm(input: Buffer): Promise<Float32Array> {
+  const dir = await mkdtemp(path.join(tmpdir(), "call-audio-"));
+  const inPath = path.join(dir, "in.audio");
+  const outPath = path.join(dir, "out.raw");
+  try {
+    await writeFile(inPath, input);
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(ffmpegPath as string, [
+        "-y",
+        "-i", inPath,
+        "-f", "f32le",
+        "-ac", "1",
+        "-ar", "16000",
+        outPath,
+      ]);
+      let stderr = "";
+      proc.stderr.on("data", (d) => { stderr += d.toString(); });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-500)}`));
+      });
+    });
+    const raw = await readFile(outPath);
+    return new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-  throw new Error("Timed out waiting for AssemblyAI to finish transcribing.");
 }
 
-// Returns a transcript broken into turns, each labeled "Speaker A" /
-// "Speaker B", etc. AssemblyAI tells speakers apart but doesn't know which
-// one is the rep vs. the lead — the reader infers that from context (the
-// rep is almost always whoever speaks first, right after the call connects).
-//
-// basicAuth is only needed for a Twilio recording URL (Twilio requires your
-// account credentials to fetch it). A Zoom (or other) recording link that's
-// directly downloadable needs no auth — pass none. A Zoom link that
-// requires signing in to view will fail here; paste that recording's own
-// Zoom-generated transcript directly instead (see the Video call form).
+type AsrPipeline = (
+  audio: Float32Array,
+  opts: Record<string, unknown>
+) => Promise<{ text: string }>;
+
+// Loaded once per process and reused — the first transcription after a
+// deploy or restart downloads the model (cached under the container's
+// HF cache dir) and loads it into memory; every call after that reuses it.
+let pipelinePromise: Promise<AsrPipeline> | null = null;
+
+async function getPipeline(): Promise<AsrPipeline> {
+  if (!pipelinePromise) {
+    pipelinePromise = (async () => {
+      const { pipeline } = await import("@huggingface/transformers");
+      return (await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
+        dtype: "fp32",
+      })) as unknown as AsrPipeline;
+    })();
+  }
+  return pipelinePromise;
+}
+
+async function runWhisper(pcm: Float32Array): Promise<string> {
+  const asr = await getPipeline();
+  const result = await asr(pcm, { chunk_length_s: 30, stride_length_s: 5 });
+  return (result.text || "").trim();
+}
+
 export async function transcribeRecording(
   recordingUrl: string,
   basicAuth?: { username: string; password: string }
@@ -75,32 +111,7 @@ export async function transcribeRecording(
   return transcribeAudioBuffer(buffer);
 }
 
-// Same as transcribeRecording, but for audio bytes we already have in hand
-// — used for a live call recorded in-browser (see lib/call-transcription.ts),
-// which is stored directly in the CallRecording table rather than fetched
-// from a URL, so there's nothing to download here.
 export async function transcribeAudioBuffer(buffer: Buffer): Promise<string> {
-  const apiKey = process.env.ASSEMBLYAI_API_KEY;
-  if (!apiKey) throw new Error("ASSEMBLYAI_API_KEY isn't set — required for call transcription.");
-
-  const uploadUrl = await uploadToAssemblyAi(buffer, apiKey);
-
-  const createRes = await fetch(`${BASE}/transcript`, {
-    method: "POST",
-    headers: { Authorization: apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_url: uploadUrl, speaker_labels: true }),
-  });
-  if (!createRes.ok) {
-    throw new Error(`AssemblyAI transcript request failed (${createRes.status}): ${(await createRes.text()).slice(0, 300)}`);
-  }
-  const { id } = await createRes.json();
-  const result = await pollTranscript(id, apiKey);
-
-  const utterances = result.utterances || [];
-  if (utterances.length === 0) {
-    // Fell back to plain text — e.g. a very short or single-speaker
-    // recording where diarization found nothing to split.
-    return result.text || "";
-  }
-  return utterances.map((u) => `Speaker ${u.speaker}: ${u.text}`).join("\n\n");
+  const pcm = await decodeTo16kMonoPcm(buffer);
+  return runWhisper(pcm);
 }
