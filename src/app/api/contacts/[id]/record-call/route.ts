@@ -3,6 +3,7 @@ import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { recordContactTouch, isTouchInteraction } from "@/lib/crm-touch";
+import { transcribeInteractionNow } from "@/lib/call-transcription";
 
 const MAX_BYTES = 150 * 1024 * 1024; // 150MB — generous for even a long call at a modest bitrate
 const ALLOWED_TYPES = new Set([
@@ -72,6 +73,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (isTouchInteraction(interaction.type, interaction.direction)) {
     await recordContactTouch(id, interaction.occurredAt);
   }
+
+  // Kick off transcription right away instead of waiting for the next
+  // background tick (up to 2 minutes) — see lib/call-transcription.ts.
+  // Not awaited: the rep shouldn't wait on AssemblyAI before the upload
+  // response comes back; the Communication Log shows "Transcribing..."
+  // until it lands.
+  void transcribeInteractionNow(interaction.id);
 
   return NextResponse.json({ interaction: { ...interaction, occurredAt: interaction.occurredAt.toISOString() } });
 }

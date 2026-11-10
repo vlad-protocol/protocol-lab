@@ -18,13 +18,17 @@ export async function GET(req: Request) {
 
   const { from, to } =
     range === "custom" && fromParam && toParam
-      ? { from: new Date(fromParam), to: new Date(new Date(toParam).setHours(23, 59, 59, 999)) }
+      ? { from: new Date(fromParam + "T00:00:00"), to: new Date(new Date(toParam + "T23:59:59.999")) }
       : resolveRange(range);
 
-  const [metrics, reps] = await Promise.all([
+  const [metrics, reps, benchmarks] = await Promise.all([
     computeSalesMetrics({ from, to, repId }),
-    prisma.user.findMany({ select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({
+      select: { id: true, name: true, email: true, salesDailyDialTarget: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.salesBenchmark.findMany({ orderBy: { metricKey: "asc" } }),
   ]);
 
-  return NextResponse.json({ metrics, reps });
+  return NextResponse.json({ metrics, reps, benchmarks });
 }

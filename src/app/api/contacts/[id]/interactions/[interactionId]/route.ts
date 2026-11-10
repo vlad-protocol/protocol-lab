@@ -12,12 +12,22 @@ import { isTouchInteraction, recomputeContactTouches } from "@/lib/crm-touch";
 // (totalTouches/lastContactDate/dateFirstContacted) is recomputed from
 // whatever's left, since we can't just decrement without knowing if this
 // was the row that set those fields.
-const VALID_OUTCOMES = new Set(["NO_ANSWER", "VOICEMAIL", "CONNECTED_NOT_BOOKED", "DEMO_BOOKED", "RESCHEDULED"]);
+const VALID_STAGES = new Set([
+  "NO_ANSWER",
+  "VOICEMAIL",
+  "GATEKEEPER",
+  "OWNER_REACHED",
+  "PITCHED",
+  "CONVERSATION_2MIN",
+  "VIDEO_CALL_BOOKED",
+]);
+const VALID_RESULT_TAGS = new Set(["NONE", "NOT_INTERESTED", "FOLLOW_UP_SET", "WRONG_NUMBER", "DO_NOT_CONTACT"]);
 
-// Tags (or clears) a call's outcome for the Sales dashboard — used both
-// right after manually logging a call and, for a Twilio-bridged or
-// live-recorded call whose outcome wasn't known at log time, from a quick
-// control on the Communication Log entry itself.
+// Tags (or clears) a call's furthest stage reached (and optionally its
+// result) for the Sales dashboard — used both right after manually
+// logging a call and, for a Twilio-bridged or live-recorded call whose
+// outcome wasn't known at log time, from a quick control on the
+// Communication Log entry itself.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; interactionId: string }> }
@@ -28,10 +38,19 @@ export async function PATCH(
   }
   const { id, interactionId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { callOutcome } = body as { callOutcome?: string | null };
+  const { callStageReached, resultTag, objectionHeard, objectionAttempts, lastQuestionAsked } = body as {
+    callStageReached?: string | null;
+    resultTag?: string;
+    objectionHeard?: string | null;
+    objectionAttempts?: number;
+    lastQuestionAsked?: boolean;
+  };
 
-  if (callOutcome !== null && callOutcome !== undefined && !VALID_OUTCOMES.has(callOutcome)) {
-    return NextResponse.json({ error: "Invalid call outcome." }, { status: 400 });
+  if (callStageReached !== null && callStageReached !== undefined && !VALID_STAGES.has(callStageReached)) {
+    return NextResponse.json({ error: "Invalid call stage." }, { status: 400 });
+  }
+  if (resultTag !== undefined && !VALID_RESULT_TAGS.has(resultTag)) {
+    return NextResponse.json({ error: "Invalid result tag." }, { status: 400 });
   }
 
   const interaction = await prisma.interaction.findUnique({ where: { id: interactionId } });
@@ -44,7 +63,13 @@ export async function PATCH(
 
   const updated = await prisma.interaction.update({
     where: { id: interactionId },
-    data: { callOutcome: (callOutcome as never) ?? null },
+    data: {
+      ...(callStageReached !== undefined ? { callStageReached: (callStageReached as never) ?? null } : {}),
+      ...(resultTag !== undefined ? { resultTag: resultTag as never } : {}),
+      ...(objectionHeard !== undefined ? { objectionHeard: objectionHeard || null } : {}),
+      ...(objectionAttempts !== undefined ? { objectionAttempts } : {}),
+      ...(lastQuestionAsked !== undefined ? { lastQuestionAsked } : {}),
+    },
   });
 
   return NextResponse.json({ interaction: { ...updated, occurredAt: updated.occurredAt.toISOString() } });

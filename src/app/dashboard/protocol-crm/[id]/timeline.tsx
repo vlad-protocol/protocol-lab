@@ -20,7 +20,15 @@ type Interaction = {
   transcript: string | null;
   transcriptStatus: "PENDING" | "PROCESSING" | "DONE" | "FAILED" | "SKIPPED" | null;
   transcriptError: string | null;
-  callOutcome: "NO_ANSWER" | "VOICEMAIL" | "CONNECTED_NOT_BOOKED" | "DEMO_BOOKED" | "RESCHEDULED" | null;
+  callStageReached:
+    | "NO_ANSWER"
+    | "VOICEMAIL"
+    | "GATEKEEPER"
+    | "OWNER_REACHED"
+    | "PITCHED"
+    | "CONVERSATION_2MIN"
+    | "VIDEO_CALL_BOOKED"
+    | null;
   user: { id: string; name: string | null; email: string } | null;
 };
 
@@ -33,12 +41,14 @@ const TYPE_LABEL: Record<Interaction["type"], string> = {
   VIDEO_CALL: "Video call",
 };
 
-const OUTCOME_LABEL: Record<NonNullable<Interaction["callOutcome"]>, string> = {
+const STAGE_LABEL: Record<NonNullable<Interaction["callStageReached"]>, string> = {
   NO_ANSWER: "No answer",
   VOICEMAIL: "Voicemail left",
-  CONNECTED_NOT_BOOKED: "Connected — no booking",
-  DEMO_BOOKED: "Demo booked",
-  RESCHEDULED: "Rescheduled",
+  GATEKEEPER: "Gatekeeper only",
+  OWNER_REACHED: "Owner reached",
+  PITCHED: "Pitched",
+  CONVERSATION_2MIN: "Conversation (2min+)",
+  VIDEO_CALL_BOOKED: "Video call booked",
 };
 
 type Tab = "note" | "call" | "video" | "text" | "email";
@@ -60,7 +70,13 @@ export function Timeline({
   const [error, setError] = useState<string | null>(null);
 
   const [noteForm, setNoteForm] = useState({ body: "" });
-  const [callForm, setCallForm] = useState({ direction: "OUTBOUND", durationSeconds: "", body: "", callOutcome: "" });
+  const [callForm, setCallForm] = useState({
+    direction: "OUTBOUND",
+    durationSeconds: "",
+    body: "",
+    callStageReached: "",
+    qualityNo: false,
+  });
   const [videoForm, setVideoForm] = useState({ direction: "OUTBOUND", durationSeconds: "", recordingUrl: "", body: "", transcript: "" });
   const [textForm, setTextForm] = useState({ to: contactPhone || "", body: "" });
   const [emailForm, setEmailForm] = useState({ to: contactEmail || "", subject: "", body: "" });
@@ -118,9 +134,13 @@ export function Timeline({
       direction: callForm.direction,
       durationSeconds: Number(callForm.durationSeconds) || null,
       body: callForm.body,
-      callOutcome: callForm.callOutcome || null,
+      callStageReached: callForm.callStageReached || null,
+      // "Quality no" is the Playbook's real-no signal: objected 2+ times
+      // but still asked a real question — shorthand checkbox instead of
+      // separate objection-count/last-question fields in this quick form.
+      ...(callForm.qualityNo ? { resultTag: "NOT_INTERESTED", objectionAttempts: 2, lastQuestionAsked: true } : {}),
     });
-    setCallForm({ direction: "OUTBOUND", durationSeconds: "", body: "", callOutcome: "" });
+    setCallForm({ direction: "OUTBOUND", durationSeconds: "", body: "", callStageReached: "", qualityNo: false });
   }
 
   async function submitVideo(e: React.FormEvent) {
@@ -157,12 +177,12 @@ export function Timeline({
     closeAndRefresh();
   }
 
-  async function setCallOutcome(interactionId: string, callOutcome: string | null) {
+  async function setCallStage(interactionId: string, callStageReached: string | null) {
     setOutcomeUpdatingId(interactionId);
     const res = await fetch(`/api/contacts/${contactId}/interactions/${interactionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callOutcome }),
+      body: JSON.stringify({ callStageReached }),
     });
     setOutcomeUpdatingId(null);
     if (res.ok) {
@@ -475,14 +495,22 @@ export function Timeline({
                 />
                 <select
                   className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
-                  value={callForm.callOutcome}
-                  onChange={(e) => setCallForm({ ...callForm, callOutcome: e.target.value })}
+                  value={callForm.callStageReached}
+                  onChange={(e) => setCallForm({ ...callForm, callStageReached: e.target.value })}
                 >
-                  <option value="">Outcome (optional) — shows up on the Sales dashboard</option>
-                  {Object.entries(OUTCOME_LABEL).map(([value, label]) => (
+                  <option value="">Furthest stage reached (optional) — shows up on the Sales dashboard</option>
+                  {Object.entries(STAGE_LABEL).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
+                <label className="flex items-center gap-2 text-xs text-[var(--hq-text-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={callForm.qualityNo}
+                    onChange={(e) => setCallForm({ ...callForm, qualityNo: e.target.checked })}
+                  />
+                  Quality no — they objected twice or more but still asked a real question
+                </label>
                 <button disabled={submitting} className="rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm font-medium text-[var(--hq-text)] disabled:opacity-50">
                   Log call manually
                 </button>
@@ -674,17 +702,17 @@ export function Timeline({
                   {i.type === "CALL" && (
                     <span className="flex items-center gap-1">
                       <select
-                        value={i.callOutcome || ""}
-                        onChange={(e) => setCallOutcome(i.id, e.target.value || null)}
+                        value={i.callStageReached || ""}
+                        onChange={(e) => setCallStage(i.id, e.target.value || null)}
                         disabled={outcomeUpdatingId === i.id}
                         className={`rounded-full border px-2 py-0.5 text-xs ${
-                          i.callOutcome
+                          i.callStageReached
                             ? "border-[var(--hq-accent)] text-[var(--hq-accent)]"
                             : "border-[var(--hq-card-border)] text-[var(--hq-text-muted)]"
                         }`}
                       >
-                        <option value="">Set outcome…</option>
-                        {Object.entries(OUTCOME_LABEL).map(([value, label]) => (
+                        <option value="">Set stage reached…</option>
+                        {Object.entries(STAGE_LABEL).map(([value, label]) => (
                           <option key={value} value={value}>{label}</option>
                         ))}
                       </select>

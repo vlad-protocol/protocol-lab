@@ -51,6 +51,11 @@ model User {
   signatureLogoUrl   String?
   signatureAccent    String?
 
+  // Sales dashboard — per-rep daily dial target, adjustable by the owner
+  // (see /dashboard/sales). Null = no personal target set; the dashboard
+  // falls back to the global default in SalesBenchmark.
+  salesDailyDialTarget Int?
+
   reels                   Reel[]
   stats                   WeeklyStat[]
   contactsCreated         Contact[]            @relation("CreatedBy")
@@ -266,15 +271,33 @@ enum InteractionDirection {
   OUTBOUND
 }
 
-// Outcome of a logged CALL, for the Sales dashboard's call-tracking
-// metrics (calls made, connect rate, voicemails, demos booked, etc.) —
-// see lib/sales-metrics.ts.
-enum CallOutcome {
+// Furthest stage reached on a logged CALL, for the Sales dashboard's
+// call-tracking metrics and KPIs (see lib/sales-metrics.ts and the
+// Protocol Sales Playbook's funnel: Dial -> Pitch -> Conversation ->
+// Booked). Each later value implies every earlier one happened too
+// (e.g. VIDEO_CALL_BOOKED implies the owner was reached and pitched),
+// so metrics are computed as "reached at least this stage", not exact
+// buckets.
+enum CallStageReached {
   NO_ANSWER // dialed, nobody picked up, no voicemail left
-  VOICEMAIL // left a voicemail
-  CONNECTED_NOT_BOOKED // reached a person, no demo/next step booked
-  DEMO_BOOKED // reached a person, booked a video/demo call
-  RESCHEDULED // a previously booked demo was moved
+  VOICEMAIL // left a voicemail, no live conversation
+  GATEKEEPER // reached front desk/staff, not the owner
+  OWNER_REACHED // got the owner on the phone
+  PITCHED // gave the 20-second pitch
+  CONVERSATION_2MIN // 2+ minutes on their actual problem
+  VIDEO_CALL_BOOKED // booked the discovery video call
+}
+
+// Result tag for a call that didn't move the lead forward — feeds the
+// Playbook's "quality noes" metric (a real no: objected more than once
+// and still asked a real question) vs. a call that just needs another
+// attempt.
+enum CallResultTag {
+  NONE
+  NOT_INTERESTED
+  FOLLOW_UP_SET
+  WRONG_NUMBER
+  DO_NOT_CONTACT
 }
 
 model Interaction {
@@ -292,12 +315,16 @@ model Interaction {
   phoneNumber     String?
   durationSeconds Int?
   recordingUrl    String?
-  // Call-tracking outcome for the Sales dashboard (/dashboard/sales) — set
+  // Call-tracking fields for the Sales dashboard (/dashboard/sales) — set
   // either when manually logging a call, or tagged afterward on a
   // Twilio-bridged or live-recorded call whose outcome wasn't known until
-  // after it happened. Only meaningful for type CALL; left null for every
-  // other interaction type.
-  callOutcome     CallOutcome?
+  // after it happened. Only meaningful for type CALL; left null/default
+  // for every other interaction type.
+  callStageReached  CallStageReached?
+  resultTag         CallResultTag     @default(NONE)
+  objectionHeard    String? // free text — matches the Playbook's dropdown (price, no budget, busy, etc.) but not locked to it
+  objectionAttempts Int               @default(0)
+  lastQuestionAsked Boolean           @default(false) // they asked a real question even after objecting — "quality no" signal
   externalId      String? // Gmail message id / Twilio call or message sid, for de-duping syncs
   occurredAt      DateTime             @default(now())
   createdAt       DateTime             @default(now())
@@ -1691,4 +1718,21 @@ model SalesScript {
   updatedAt DateTime @updatedAt
 
   @@index([category, sortOrder])
+}
+
+// Admin-editable KPI thresholds for the Sales dashboard — the Playbook's
+// red/amber/green benchmarks (dials/day, pickup rate, pitch rate,
+// conversation rate, booking rate, show rate, close rate), seeded with
+// the Playbook's own defaults but adjustable per metricKey from the
+// dashboard's Targets & Benchmarks panel (owner only).
+model SalesBenchmark {
+  id        String   @id @default(cuid())
+  metricKey String   @unique
+  label     String
+  unit      String // "count" | "percent"
+  // >= greenMin is green, >= amberMin (and < greenMin) is amber, below
+  // amberMin is red. Percent values stored as 0-100.
+  amberMin  Float
+  greenMin  Float
+  updatedAt DateTime @updatedAt
 }

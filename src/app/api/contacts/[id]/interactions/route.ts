@@ -16,18 +16,35 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   const body = await req.json();
-  const { type, direction, subject, body: text, durationSeconds, recordingUrl, occurredAt, transcript, callOutcome } =
-    body as {
-      type?: string;
-      direction?: string;
-      subject?: string;
-      body?: string;
-      durationSeconds?: number;
-      recordingUrl?: string;
-      occurredAt?: string;
-      transcript?: string;
-      callOutcome?: string;
-    };
+  const {
+    type,
+    direction,
+    subject,
+    body: text,
+    durationSeconds,
+    recordingUrl,
+    occurredAt,
+    transcript,
+    callStageReached,
+    resultTag,
+    objectionHeard,
+    objectionAttempts,
+    lastQuestionAsked,
+  } = body as {
+    type?: string;
+    direction?: string;
+    subject?: string;
+    body?: string;
+    durationSeconds?: number;
+    recordingUrl?: string;
+    occurredAt?: string;
+    transcript?: string;
+    callStageReached?: string;
+    resultTag?: string;
+    objectionHeard?: string;
+    objectionAttempts?: number;
+    lastQuestionAsked?: boolean;
+  };
 
   if (!type || !direction) {
     return NextResponse.json({ error: "type and direction are required." }, { status: 400 });
@@ -59,7 +76,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
       transcript: trimmedTranscript,
       transcriptStatus,
-      callOutcome: type === "CALL" && callOutcome ? (callOutcome as never) : null,
+      callStageReached: type === "CALL" && callStageReached ? (callStageReached as never) : null,
+      resultTag: type === "CALL" && resultTag ? (resultTag as never) : undefined,
+      objectionHeard: type === "CALL" ? objectionHeard || null : null,
+      objectionAttempts: type === "CALL" ? objectionAttempts ?? 0 : 0,
+      lastQuestionAsked: type === "CALL" ? lastQuestionAsked ?? false : false,
     },
   });
   if (isTouchInteraction(interaction.type, interaction.direction)) {
