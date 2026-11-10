@@ -1,6 +1,21 @@
 import { prisma } from "@/lib/prisma";
 import { getTwilioConfig } from "@/lib/integrations/twilio";
-import { isCallTranscriptionConfigured, transcribeRecording } from "@/lib/integrations/assemblyai";
+import { isCallTranscriptionConfigured, transcribeRecording, transcribeAudioBuffer } from "@/lib/integrations/assemblyai";
+
+// A recordingUrl in this form points at a locally-stored recording (the
+// "Record live call" button on a lead's timeline — see
+// api/contacts/[id]/record-call/route.ts) rather than a Twilio or Zoom URL.
+// Its bytes live in the CallRecording table, so we read them directly
+// instead of fetching over HTTP (the audio route requires session auth that
+// this background job doesn't have).
+const LOCAL_RECORDING_PREFIX = "/api/call-recordings/";
+
+function localRecordingId(recordingUrl: string): string | null {
+  if (!recordingUrl.startsWith(LOCAL_RECORDING_PREFIX)) return null;
+  const rest = recordingUrl.slice(LOCAL_RECORDING_PREFIX.length);
+  const id = rest.split("/")[0];
+  return id || null;
+}
 
 // Mirrors transcribePendingPosts() in lib/content-performance.ts — same
 // PENDING -> PROCESSING -> DONE/FAILED lifecycle. Covers two sources of
@@ -34,14 +49,22 @@ export async function transcribePendingCallRecordings(batchSize = 3) {
     await prisma.interaction.update({ where: { id: interaction.id }, data: { transcriptStatus: "PROCESSING" } });
     try {
       if (!interaction.recordingUrl) throw new Error("No recording URL on this interaction.");
-      const basicAuth =
-        interaction.type === "CALL" && twilioConfig
-          ? { username: twilioConfig.accountSid, password: twilioConfig.authToken }
-          : undefined;
-      if (interaction.type === "CALL" && !basicAuth) {
-        throw new Error("Twilio isn't connected, so this call recording can't be fetched.");
+      const localId = localRecordingId(interaction.recordingUrl);
+      let transcript: string;
+      if (localId) {
+        const recording = await prisma.callRecording.findUnique({ where: { id: localId } });
+        if (!recording) throw new Error("Recorded audio is missing — it may have been deleted.");
+        transcript = await transcribeAudioBuffer(Buffer.from(recording.data));
+      } else {
+        const basicAuth =
+          interaction.type === "CALL" && twilioConfig
+            ? { username: twilioConfig.accountSid, password: twilioConfig.authToken }
+            : undefined;
+        if (interaction.type === "CALL" && !basicAuth) {
+          throw new Error("Twilio isn't connected, so this call recording can't be fetched.");
+        }
+        transcript = await transcribeRecording(interaction.recordingUrl, basicAuth);
       }
-      const transcript = await transcribeRecording(interaction.recordingUrl, basicAuth);
       await prisma.interaction.update({
         where: { id: interaction.id },
         data: { transcript, transcriptStatus: "DONE", transcriptError: null },

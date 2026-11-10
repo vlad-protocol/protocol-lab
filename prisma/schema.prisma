@@ -81,6 +81,7 @@ model User {
   smsCampaigns            SmsCampaign[]
   protocolListMembers     ProtocolListMember[]
   uploadedImages          UploadedImage[]
+  callRecordings          CallRecording[]
   confirmedSequenceDrafts SequenceStepDraft[]
   marketingEvents         MarketingEvent[]
   activationsCreated      Activation[]
@@ -1435,6 +1436,25 @@ model UploadedImage {
   data        Bytes
   contentType String
   filename    String?
+  size        Int
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
+
+// Audio captured live in the browser (MediaRecorder, phone on speaker)
+// via the "Record live call" option on a lead's timeline — for when
+// Vlad is on a call from his own phone's native dialer, not dialed
+// through Twilio, and just wants the conversation recorded. Bytes live
+// here (same pattern as UploadedImage); the Interaction row it's
+// attached to points its recordingUrl at /api/call-recordings/[id]/audio,
+// which lib/call-transcription.ts recognizes and reads directly from
+// this table rather than fetching over HTTP (no network call, no auth
+// headers to figure out, unlike a Twilio or Zoom recording URL).
+model CallRecording {
+  id          String   @id @default(cuid())
+  data        Bytes
+  contentType String
   size        Int
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)

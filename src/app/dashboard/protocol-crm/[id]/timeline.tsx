@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp, Trash2, Mic, Square } from "lucide-react";
 import { EmailInteractionModal } from "./email-interaction-modal";
 
 type Interaction = {
@@ -61,6 +61,17 @@ export function Timeline({
   const [repPhone, setRepPhone] = useState("");
   const [expandedTranscriptId, setExpandedTranscriptId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // "Record live call" — capture audio through the phone's own mic while
+  // Vlad is on a native call on speaker, not dialed through Twilio at all.
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [recordSaving, setRecordSaving] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordStreamRef = useRef<MediaStream | null>(null);
 
   function closeAndRefresh() {
     setTab(null);
@@ -145,6 +156,91 @@ export function Timeline({
     } else {
       const d = await res.json().catch(() => ({}));
       setError(d.error || "Couldn't delete this entry.");
+    }
+  }
+
+  function pickRecordingMimeType() {
+    // iPhone Safari only supports audio/mp4 (via its AAC encoder); Chrome
+    // and most others support audio/webm. Fall back to letting the browser
+    // choose if neither reports as supported.
+    const candidates = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+    for (const type of candidates) {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(type)) return type;
+    }
+    return undefined;
+  }
+
+  async function startRecording() {
+    setRecordError(null);
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setRecordError("This browser doesn't support recording audio.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordStreamRef.current = stream;
+      const mimeType = pickRecordingMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordSeconds(0);
+      recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    } catch {
+      setRecordError("Couldn't access the microphone — check your browser's permission for this site.");
+    }
+  }
+
+  async function stopRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    const mimeType = recorder.mimeType || "audio/webm";
+    const finalSeconds = recordSeconds;
+
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    recordTimerRef.current = null;
+    recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recordStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+
+    const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+    recordedChunksRef.current = [];
+
+    if (blob.size === 0) {
+      setRecordError("The recording came out empty — try again.");
+      return;
+    }
+
+    setRecordSaving(true);
+    setRecordError(null);
+    try {
+      const form = new FormData();
+      const ext = mimeType.includes("mp4") ? "m4a" : mimeType.includes("ogg") ? "ogg" : "webm";
+      form.append("audio", blob, `call-recording.${ext}`);
+      form.append("direction", "OUTBOUND");
+      form.append("durationSeconds", String(finalSeconds));
+      const res = await fetch(`/api/contacts/${contactId}/record-call`, { method: "POST", body: form });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setRecordError(d.error || "Couldn't save the recording.");
+        return;
+      }
+      closeAndRefresh();
+    } catch {
+      setRecordError("Couldn't save the recording — check your connection and try again.");
+    } finally {
+      setRecordSaving(false);
+      setRecordSeconds(0);
     }
   }
 
@@ -262,10 +358,49 @@ export function Timeline({
 
           {tab === "call" && (
             <div className="space-y-3">
+              <div className="rounded-xl border border-[var(--hq-card-border)] bg-[var(--hq-canvas)] p-3">
+                <p className="text-xs text-[var(--hq-text-muted)]">
+                  Calling from your own phone? Put it on speaker, hit record here, and this page
+                  captures the conversation through this device&apos;s microphone — no Twilio
+                  bridging, nothing to dial. Call recording consent laws vary by state and
+                  country; let the other party know they&apos;re being recorded where required.
+                </p>
+                {recordError && <p className="mt-2 text-xs text-red-600">{recordError}</p>}
+                <div className="mt-2 flex items-center gap-3">
+                  {!isRecording ? (
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      disabled={recordSaving}
+                      className="flex items-center gap-1.5 rounded-md bg-[var(--hq-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      <Mic className="h-4 w-4" />
+                      {recordSaving ? "Saving…" : "Record live call"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white"
+                    >
+                      <Square className="h-3.5 w-3.5 fill-current" />
+                      Stop &amp; save
+                    </button>
+                  )}
+                  {isRecording && (
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-red-600">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" />
+                      {String(Math.floor(recordSeconds / 60)).padStart(2, "0")}:
+                      {String(recordSeconds % 60).padStart(2, "0")}
+                    </span>
+                  )}
+                  {recordSaving && <Loader2 className="h-4 w-4 animate-spin text-[var(--hq-text-muted)]" />}
+                </div>
+              </div>
               <div className="rounded-md bg-[var(--hq-canvas)] p-3 text-xs text-[var(--hq-text-muted)]">
-                Start a live recorded call (rings your phone, then bridges to the contact and
-                records once connected — requires Twilio to be connected in Settings), or just
-                log a call you already made.
+                Or start a live recorded call through Twilio (rings your phone, then bridges to
+                the contact and records once connected — requires Twilio to be connected in
+                Settings), or just log a call you already made.
               </div>
               <div className="flex items-end gap-2">
                 <div className="flex-1">

@@ -71,10 +71,18 @@ export async function transcribeRecording(
   recordingUrl: string,
   basicAuth?: { username: string; password: string }
 ): Promise<string> {
+  const buffer = await downloadRecording(recordingUrl, basicAuth);
+  return transcribeAudioBuffer(buffer);
+}
+
+// Same as transcribeRecording, but for audio bytes we already have in hand
+// — used for a live call recorded in-browser (see lib/call-transcription.ts),
+// which is stored directly in the CallRecording table rather than fetched
+// from a URL, so there's nothing to download here.
+export async function transcribeAudioBuffer(buffer: Buffer): Promise<string> {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
   if (!apiKey) throw new Error("ASSEMBLYAI_API_KEY isn't set — required for call transcription.");
 
-  const buffer = await downloadRecording(recordingUrl, basicAuth);
   const uploadUrl = await uploadToAssemblyAi(buffer, apiKey);
 
   const createRes = await fetch(`${BASE}/transcript`, {
