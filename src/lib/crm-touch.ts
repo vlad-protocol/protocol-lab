@@ -33,6 +33,28 @@ export async function recordContactTouch(contactId: string, occurredAt: Date = n
   });
 }
 
+// Recomputes a lead's touch bookkeeping from scratch, straight off the
+// Interaction rows that still exist — used after deleting a logged
+// interaction (see the interaction DELETE route), since we don't know
+// whether the row being removed was the one that set lastContactDate/
+// dateFirstContacted/totalTouches in the first place. Safer than trying
+// to decrement in place.
+export async function recomputeContactTouches(contactId: string) {
+  const touches = await prisma.interaction.findMany({
+    where: { contactId, direction: "OUTBOUND", type: { in: ["EMAIL", "CALL", "TEXT", "VIDEO_CALL"] } },
+    select: { occurredAt: true },
+    orderBy: { occurredAt: "asc" },
+  });
+  await prisma.contact.update({
+    where: { id: contactId },
+    data: {
+      totalTouches: touches.length,
+      dateFirstContacted: touches[0]?.occurredAt || null,
+      lastContactDate: touches[touches.length - 1]?.occurredAt || null,
+    },
+  });
+}
+
 // Batch version for a historical sync (e.g. Gmail history backfill) that
 // just bulk-inserted many Interaction rows at once via createMany — one
 // DB round trip per affected contact instead of per message.

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Mail, Phone, MessageSquare, StickyNote, ArrowDownLeft, ArrowUpRight, PlayCircle, Video, Sparkles, FileText, Loader2, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { EmailInteractionModal } from "./email-interaction-modal";
 
 type Interaction = {
@@ -60,6 +60,7 @@ export function Timeline({
   const [viewingEmailId, setViewingEmailId] = useState<string | null>(null);
   const [repPhone, setRepPhone] = useState("");
   const [expandedTranscriptId, setExpandedTranscriptId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function closeAndRefresh() {
     setTab(null);
@@ -132,6 +133,19 @@ export function Timeline({
     }
     setTextForm({ to: contactPhone || "", body: "" });
     closeAndRefresh();
+  }
+
+  async function deleteInteraction(interactionId: string) {
+    if (!confirm("Delete this entry from the communication log? This can't be undone.")) return;
+    setDeletingId(interactionId);
+    const res = await fetch(`/api/contacts/${contactId}/interactions/${interactionId}`, { method: "DELETE" });
+    setDeletingId(null);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Couldn't delete this entry.");
+    }
   }
 
   async function suggestFollowUp() {
@@ -453,19 +467,33 @@ export function Timeline({
               ? "bg-[var(--hq-canvas)] text-[var(--hq-text-muted)]"
               : "bg-[var(--hq-accent-soft)] text-[var(--hq-accent)]";
           return (
-            <div key={i.id} className="flex gap-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
+            <div key={i.id} className="group flex gap-3 rounded-xl border border-[var(--hq-card-border)] bg-white p-4">
               <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--hq-text)]">
                     <DirIcon className="h-3.5 w-3.5 text-[var(--hq-text-muted)]" />
                     {i.subject || TYPE_LABEL[i.type]}
                   </p>
-                  <p className="text-xs text-[var(--hq-text-muted)]">
-                    {new Date(i.occurredAt).toLocaleString()}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <p className="text-xs text-[var(--hq-text-muted)]">
+                      {new Date(i.occurredAt).toLocaleString()}
+                    </p>
+                    <button
+                      onClick={() => deleteInteraction(i.id)}
+                      disabled={deletingId === i.id}
+                      title="Delete this entry"
+                      className="opacity-0 transition group-hover:opacity-100 disabled:opacity-100"
+                    >
+                      {deletingId === i.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--hq-text-muted)]" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 text-neutral-500 hover:text-red-500" />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {i.body && <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--hq-text-muted)]">{i.body}</p>}
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--hq-text-muted)]">
