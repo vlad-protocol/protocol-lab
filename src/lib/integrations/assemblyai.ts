@@ -22,8 +22,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-// @ts-expect-error — ffmpeg-static ships no types; its default export is
-// the absolute path to a static ffmpeg binary for this platform.
+// ffmpeg-static's default export is the absolute path to a static ffmpeg
+// binary for this platform (string), or null if none is bundled for it.
 import ffmpegPath from "ffmpeg-static";
 
 // Self-hosted — nothing to configure. Kept as a function (not a const)
@@ -52,7 +52,11 @@ async function decodeTo16kMonoPcm(input: Buffer): Promise<Float32Array> {
   try {
     await writeFile(inPath, input);
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpegPath as string, [
+      if (!ffmpegPath) {
+        reject(new Error("ffmpeg-static has no bundled binary for this platform."));
+        return;
+      }
+      const proc = spawn(ffmpegPath, [
         "-y",
         "-i", inPath,
         "-f", "f32le",
