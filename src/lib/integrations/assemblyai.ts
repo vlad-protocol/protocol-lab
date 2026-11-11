@@ -19,12 +19,49 @@
 // changed.
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 // ffmpeg-static's default export is the absolute path to a static ffmpeg
 // binary for this platform (string), or null if none is bundled for it.
 import ffmpegPath from "ffmpeg-static";
+
+// ffmpeg-static downloads its actual binary via its own npm "install"
+// lifecycle script — which depends on install scripts being allowed to
+// run at all. That's turned out to be fragile (npm's newer
+// install-scripts allowlist silently skipped it on one deploy, and it's
+// easy to imagine other ways a postinstall step gets dropped between
+// build and the running container — a layer-caching quirk, a pruned
+// image, etc.). Rather than relying on that happening correctly, check
+// the binary is actually on disk right before we need it and, if not,
+// run ffmpeg-static's own install script ourselves, once per container
+// lifetime — self-healing regardless of why it went missing.
+let ensureFfmpegPromise: Promise<string> | null = null;
+
+async function ensureFfmpegBinary(): Promise<string> {
+  if (!ffmpegPath) throw new Error("ffmpeg-static has no bundled binary for this platform.");
+  if (!ensureFfmpegPromise) {
+    ensureFfmpegPromise = (async () => {
+      try {
+        await access(ffmpegPath as string);
+        return ffmpegPath as string;
+      } catch {
+        const installScript = path.join(path.dirname(ffmpegPath as string), "install.js");
+        await new Promise<void>((resolve, reject) => {
+          const proc = spawn(process.execPath, [installScript], { stdio: "inherit" });
+          proc.on("error", reject);
+          proc.on("close", (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`ffmpeg-static's install.js exited with code ${code} while fetching the ffmpeg binary.`));
+          });
+        });
+        await access(ffmpegPath as string);
+        return ffmpegPath as string;
+      }
+    })();
+  }
+  return ensureFfmpegPromise;
+}
 
 // Self-hosted — nothing to configure. Kept as a function (not a const)
 // so callers don't need to change; it always returns true now.
@@ -51,12 +88,9 @@ async function decodeTo16kMonoPcm(input: Buffer): Promise<Float32Array> {
   const outPath = path.join(dir, "out.raw");
   try {
     await writeFile(inPath, input);
+    const resolvedFfmpegPath = await ensureFfmpegBinary();
     await new Promise<void>((resolve, reject) => {
-      if (!ffmpegPath) {
-        reject(new Error("ffmpeg-static has no bundled binary for this platform."));
-        return;
-      }
-      const proc = spawn(ffmpegPath, [
+      const proc = spawn(resolvedFfmpegPath, [
         "-y",
         "-i", inPath,
         "-f", "f32le",
