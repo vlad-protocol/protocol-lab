@@ -9,6 +9,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const existing = await prisma.availability.findUnique({ where: { id } });
+  // OWNER can tidy up anyone's windows (e.g. after a rep leaves); an
+  // EMPLOYEE can only touch their own.
+  if (!existing || (session.user.role !== "OWNER" && existing.hostUserId !== session.user.id)) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
   await prisma.availability.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

@@ -77,6 +77,16 @@ export function getGmailAuthUrl(state: string) {
       // reading messages) but stops short of permanently deleting mail.
       "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/userinfo.email",
+      // Booking (lib/integrations/google-calendar.ts) reuses this same
+      // connection rather than running a second OAuth flow — one Google
+      // account, one "Connect Google" button, covers both Gmail and the
+      // rep's own Calendar. calendar.events covers creating/updating/
+      // deleting the events a confirmed booking writes; calendar.readonly
+      // is needed on top of that for freebusy.query (checking the rep's
+      // real calendar for conflicts) — calendar.events alone doesn't
+      // authorize that endpoint.
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.readonly",
     ],
     state,
   });
@@ -96,7 +106,10 @@ export async function exchangeGmailCode(code: string) {
   };
 }
 
-async function getClientForUser(userId: string) {
+// Exported so lib/integrations/google-calendar.ts can build a Calendar API
+// client off the exact same connection/refresh logic — one Google
+// account, one stored token, two Google APIs.
+export async function getClientForUser(userId: string) {
   const conn = await prisma.gmailConnection.findUnique({ where: { userId } });
   if (!conn) throw new Error("This user hasn't connected Gmail yet.");
 

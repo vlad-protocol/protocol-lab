@@ -26,6 +26,7 @@ export async function register() {
     "@/lib/content-performance"
   );
   const { transcribePendingCallRecordings } = await import("@/lib/call-transcription");
+  const { sendDueBookingReminders } = await import("@/lib/booking-reminders");
 
   let lastContentSyncAt = 0;
 
@@ -148,6 +149,22 @@ export async function register() {
       }
     } catch (err) {
       console.error("[calls] call transcription background run failed:", err);
+    }
+
+    try {
+      // Booking reminders ("send an email 24h before") — see
+      // lib/booking-reminders.ts.
+      const bookingReminders = await sendDueBookingReminders();
+      if (bookingReminders.length > 0) {
+        console.log(
+          `[booking] sent ${bookingReminders.filter((r) => !r.error).length}/${bookingReminders.length} reminders`
+        );
+        for (const r of bookingReminders) {
+          if (r.error) console.error(`[booking] reminder failed for booking ${r.bookingId}:`, r.error);
+        }
+      }
+    } catch (err) {
+      console.error("[booking] reminder background run failed:", err);
     }
   };
 

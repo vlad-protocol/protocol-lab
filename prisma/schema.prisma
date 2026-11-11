@@ -96,6 +96,8 @@ model User {
   contentPostsCreated     ContentPost[]
   contentCarouselsCreated ContentCarousel[]
   salesScriptsUpdated     SalesScript[]
+  bookingEventTypes       BookingEventType[]
+  bookings                Booking[]
 }
 
 // --- Phase 2: content & analytics ---------------------------------------
@@ -228,6 +230,7 @@ model Contact {
   adCampaigns         AdCampaign[]
   emailSends          EmailSend[]
   smsSends            SmsSend[]
+  bookings            Booking[]
 
   @@index([email])
   @@index([phone])
@@ -698,40 +701,176 @@ model CalendarEvent {
   @@index([startsAt])
 }
 
-// --- Booking ------------------------------------------------------------
-// v1: you set weekly availability windows, share the public /book link,
-// people request a slot, you confirm or decline from the dashboard. No
-// external calendar sync yet — that's the natural next step.
+// --- Booking --------------------------------------------------------------
+// v2, Calendly-style: each rep (host) sets their own weekly availability
+// and connects their own Google Calendar (reuses the Gmail OAuth
+// connection — see lib/integrations/gmail.ts/google-calendar.ts — so no
+// second "connect" flow or extra Google Cloud redirect URI is needed).
+// A host can publish several event types — e.g. one with qualification
+// questions turned on, one without — each with its own public /book/[slug]
+// link, duration, and buffers. Booking a slot checks the host's weekly
+// windows AND their live Google Calendar free/busy AND anything already
+// booked in this table, then books instantly (no manual confirm step)
+// and writes the event straight into the host's Google Calendar.
+// Reminders (BookingReminder) are a simple global or per-event-type rule
+// — "send an email N minutes before" — fired from the same background
+// tick as everything else (see instrumentation.ts / lib/booking-reminders.ts).
 
 model Availability {
-  id          String   @id @default(cuid())
-  dayOfWeek   Int // 0 = Sunday .. 6 = Saturday
-  startTime   String // "09:00"
-  endTime     String // "17:00"
-  createdById String?
-  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  hostUserId String
+  host       User     @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int // 0 = Sunday .. 6 = Saturday
+  startTime  String // "09:00"
+  endTime    String // "17:00"
+  createdAt  DateTime @default(now())
 
-  @@index([dayOfWeek])
+  @@index([hostUserId, dayOfWeek])
+}
+
+enum BookingQuestionType {
+  TEXT
+  TEXTAREA
+  RADIO
+  CHECKBOX
+  DROPDOWN
+  PHONE
+}
+
+model BookingEventType {
+  id          String  @id @default(cuid())
+  slug        String  @unique // public link: /book/[slug]
+  name        String
+  description String?
+
+  hostUserId String
+  host       User   @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+
+  durationMinutes Int @default(30)
+
+  // Toggle whether this link asks qualification questions before showing
+  // availability — Vlad's "different links for qualified vs. not" ask is
+  // just two event types, one with this on and one with it off.
+  requiresQuestions Boolean @default(false)
+  questions         BookingQuestion[]
+
+  location            String? // "Phone call", "Zoom", a default video link, etc.
+  bufferBeforeMinutes Int     @default(0)
+  bufferAfterMinutes  Int     @default(0)
+  minNoticeHours      Int     @default(2) // can't be booked sooner than this from now
+  dailyLimit          Int? // optional cap on how many of this event type per day
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings  Booking[]
+  reminders BookingReminder[]
+
+  @@index([hostUserId])
+}
+
+model BookingQuestion {
+  id          String              @id @default(cuid())
+  eventTypeId String
+  eventType   BookingEventType    @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  label       String
+  type        BookingQuestionType @default(TEXT)
+  required    Boolean             @default(true)
+  options     String[]            @default([]) // choices for RADIO/CHECKBOX/DROPDOWN
+  order       Int                 @default(0)
+
+  answers BookingAnswer[]
+
+  @@index([eventTypeId, order])
 }
 
 enum BookingStatus {
-  PENDING
   CONFIRMED
-  DECLINED
+  CANCELED
 }
 
-model BookingRequest {
-  id          String        @id @default(cuid())
-  name        String
-  email       String
-  phone       String?
-  message     String?
-  requestedAt DateTime // the slot they asked for
-  status      BookingStatus @default(PENDING)
-  createdAt   DateTime      @default(now())
+model Booking {
+  id          String           @id @default(cuid())
+  eventTypeId String
+  eventType   BookingEventType @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  hostUserId  String
+  host        User             @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
 
-  @@index([status, requestedAt])
+  name  String
+  email String
+  phone String?
+
+  startsAt DateTime
+  endsAt   DateTime
+  status   BookingStatus @default(CONFIRMED)
+
+  // The event id Google Calendar gave back when we wrote this booking in,
+  // so a cancellation can delete it there too — null if the host hasn't
+  // connected Google Calendar (the booking still works, just isn't synced).
+  googleEventId String?
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  canceledAt   DateTime?
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+
+  answers       BookingAnswer[]
+  remindersSent BookingReminderLog[]
+
+  @@index([hostUserId, startsAt])
+  @@index([eventTypeId, startsAt])
+}
+
+model BookingAnswer {
+  id         String          @id @default(cuid())
+  bookingId  String
+  booking    Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  questionId String
+  question   BookingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  // Snapshot of the question text at booking time — the question itself
+  // can be edited/deleted later without corrupting past answers.
+  label  String
+  answer String // checkbox answers are joined with ", "
+
+  @@index([bookingId])
+}
+
+enum ReminderChannel {
+  EMAIL
+  SMS
+}
+
+model BookingReminder {
+  id String @id @default(cuid())
+
+  // null = applies to every event type; set = only that one.
+  eventTypeId String?
+  eventType   BookingEventType? @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+
+  minutesBefore Int // e.g. 1440 for 24h, 30 for 30min
+  channel       ReminderChannel
+  // Supports {{name}}, {{host}}, {{eventName}}, {{time}}, {{location}}.
+  messageTemplate String
+  enabled         Boolean @default(true)
+  createdAt       DateTime @default(now())
+
+  sentLogs BookingReminderLog[]
+
+  @@index([eventTypeId])
+}
+
+model BookingReminderLog {
+  id         String          @id @default(cuid())
+  bookingId  String
+  booking    Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reminderId String
+  reminder   BookingReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  sentAt     DateTime        @default(now())
+
+  @@unique([bookingId, reminderId])
 }
 
 // --- Docs + Sign ----------------------------------------------------------
