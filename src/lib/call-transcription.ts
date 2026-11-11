@@ -20,7 +20,7 @@ function localRecordingId(recordingUrl: string): string | null {
 
 type Interaction = Awaited<ReturnType<typeof prisma.interaction.findUniqueOrThrow>>;
 
-async function transcribeOne(interaction: Interaction, twilioConfig: Awaited<ReturnType<typeof getTwilioConfig>>) {
+export async function transcribeOne(interaction: Interaction, twilioConfig: Awaited<ReturnType<typeof getTwilioConfig>>) {
   try {
     if (!interaction.recordingUrl) throw new Error("No recording URL on this interaction.");
     const localId = localRecordingId(interaction.recordingUrl);

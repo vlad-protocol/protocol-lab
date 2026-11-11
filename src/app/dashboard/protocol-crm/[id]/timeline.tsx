@@ -91,6 +91,8 @@ export function Timeline({
   const [editForm, setEditForm] = useState({ subject: "", body: "", transcript: "", occurredAt: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<Record<string, string>>({});
 
   // "Record live call" — capture audio through the phone's own mic while
   // Vlad is on a native call on speaker, not dialed through Twilio at all.
@@ -233,6 +235,21 @@ export function Timeline({
   function cancelEdit() {
     setEditingId(null);
     setEditError(null);
+  }
+
+  async function retryTranscription(interactionId: string) {
+    setRetryingId(interactionId);
+    setRetryError((prev) => ({ ...prev, [interactionId]: "" }));
+    const res = await fetch(`/api/contacts/${contactId}/interactions/${interactionId}/retranscribe`, {
+      method: "POST",
+    });
+    setRetryingId(null);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setRetryError((prev) => ({ ...prev, [interactionId]: d.error || "Couldn't retry transcription." }));
+    }
   }
 
   async function saveEdit(i: Interaction) {
@@ -863,9 +880,19 @@ export function Timeline({
                     </span>
                   )}
                   {i.transcriptStatus === "FAILED" && (
-                    <span className="text-red-600" title={i.transcriptError || undefined}>
+                    <span className="flex items-center gap-1.5 text-red-600" title={i.transcriptError || undefined}>
                       Transcription failed
+                      <button
+                        onClick={() => retryTranscription(i.id)}
+                        disabled={retryingId === i.id}
+                        className="font-medium text-[var(--hq-accent)] hover:underline disabled:opacity-60"
+                      >
+                        {retryingId === i.id ? "Retrying…" : "Retry"}
+                      </button>
                     </span>
+                  )}
+                  {retryError[i.id] && (
+                    <span className="text-red-600">{retryError[i.id]}</span>
                   )}
                   {i.transcriptStatus === "DONE" && i.transcript && (
                     <button
