@@ -3,7 +3,6 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
-// @ts-expect-error - no types needed, just inspecting what ffmpeg-static resolves to
 import ffmpegPath from "ffmpeg-static";
 
 // TEMPORARY diagnostic route — not linked from any UI. Lets us see
