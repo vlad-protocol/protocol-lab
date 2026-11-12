@@ -231,6 +231,7 @@ model Contact {
   emailSends          EmailSend[]
   smsSends            SmsSend[]
   bookings            Booking[]
+  liveProposals       LiveProposal[]
 
   @@index([email])
   @@index([phone])
@@ -1874,4 +1875,58 @@ model SalesBenchmark {
   amberMin  Float
   greenMin  Float
   updatedAt DateTime @updatedAt
+}
+
+// Live Proposal: the proposal deck built DURING the discovery call.
+// Audio from the rep's mic and the shared Google Meet tab is sent in
+// short chunks, transcribed by the same self-hosted Whisper pipeline as
+// call recordings, and stored as one LiveProposalSegment row per chunk
+// (rows, not a JSON array, so two chunks landing at once can't clobber
+// each other). Claude periodically reads the transcript and fills
+// `fields` (the discovery answers); anything a person edits by hand is
+// added to `lockedFields` and never overwritten by the AI again. The
+// deck itself is rendered from fields + the chosen concept at
+// /present/[id] — see src/lib/live-proposal.ts.
+model LiveProposal {
+  id        String   @id @default(cuid())
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  title        String  @default("New live proposal")
+  status       String  @default("LIVE") // LIVE | DONE
+  callLanguage String  @default("english") // Whisper language hint: english | french
+  priceTier    String  @default("FOUNDING") // FOUNDING | STANDARD | QUARTERLY
+
+  fields         Json     @default("{}") // { [key]: { value, quote? } }
+  lockedFields   String[] @default([])
+  concepts       Json     @default("[]") // see LiveConcept in live-proposal.ts
+  chosenConcept  Int?
+  extractCount   Int      @default(0)
+  lastExtractAt  DateTime?
+  lastError      String?
+
+  acceptedAt    DateTime?
+  paymentChoice String? // PAY_IN_FULL | SPLIT_20_40_40
+  activationId  String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  segments LiveProposalSegment[]
+
+  @@index([contactId])
+  @@index([createdAt])
+}
+
+model LiveProposalSegment {
+  id         String       @id @default(cuid())
+  proposalId String
+  proposal   LiveProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  speaker    String // REP (mic) | CLIENT (shared meeting tab)
+  text       String
+  startedAt  DateTime
+  createdAt  DateTime     @default(now())
+
+  @@index([proposalId, startedAt])
 }

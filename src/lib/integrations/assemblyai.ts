@@ -153,3 +153,45 @@ export async function transcribeAudioBuffer(buffer: Buffer): Promise<string> {
   const pcm = await decodeTo16kMonoPcm(buffer);
   return runWhisper(pcm);
 }
+
+// ---------------------------------------------------------------------------
+// Live chunks (Live Proposal). Short (~15s) webm/opus pieces arrive while a
+// discovery call is still going, from two sources at once (the rep's mic and
+// the shared Meet tab). Three differences from a full call recording:
+//   1. Silence gate: Whisper invents text on near-silent audio ("Thank you.",
+//      "Sous-titres réalisés par…"), so a chunk whose loudness is below
+//      SILENCE_RMS is skipped without running the model at all.
+//   2. Serialized: chunks run one at a time through a tiny queue so two
+//      speakers' chunks don't fight over the CPU and both arrive late.
+//   3. Language hint: the call's language is passed through so a short
+//      French chunk isn't misdetected (and so the model transcribes rather
+//      than translates).
+const SILENCE_RMS = 0.006;
+const HALLUCINATIONS = [
+  /^(thank you|thanks for watching|merci|merci d'avoir regardé|you|bye)[.!]*$/i,
+  /sous-titres? (réalisés|par)/i,
+  /amara\.org/i,
+];
+let liveQueue: Promise<unknown> = Promise.resolve();
+
+function rms(pcm: Float32Array): number {
+  if (pcm.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+  return Math.sqrt(sum / pcm.length);
+}
+
+export async function transcribeLiveChunk(buffer: Buffer, language: "english" | "french" = "english"): Promise<string> {
+  const job = liveQueue.then(async () => {
+    const pcm = await decodeTo16kMonoPcm(buffer);
+    if (rms(pcm) < SILENCE_RMS) return "";
+    const asr = await getPipeline();
+    const result = await asr(pcm, { chunk_length_s: 30, stride_length_s: 5, language, task: "transcribe" });
+    const text = (result.text || "").trim();
+    if (!text || HALLUCINATIONS.some((re) => re.test(text))) return "";
+    return text;
+  });
+  // Keep the queue alive even if this job throws.
+  liveQueue = job.catch(() => undefined);
+  return job;
+}
