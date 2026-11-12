@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { sanitizeScriptHtml } from "@/lib/sanitize-script-html";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -20,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data: {
       ...(title !== undefined ? { title } : {}),
       ...(category !== undefined ? { category } : {}),
-      ...(text !== undefined ? { body: text } : {}),
+      ...(text !== undefined ? { body: sanitizeScriptHtml(text) } : {}),
       ...(sortOrder !== undefined ? { sortOrder } : {}),
       updatedById: session.user.id,
     },
