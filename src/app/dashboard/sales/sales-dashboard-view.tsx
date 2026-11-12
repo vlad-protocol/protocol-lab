@@ -16,6 +16,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { ScriptRichTextEditor } from "./script-rich-text-editor";
 
 type RepTotals = {
   userId: string | null;
@@ -616,12 +617,10 @@ function ScriptsPanel({ initialScripts, isOwner }: { initialScripts: SalesScript
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value })}
           />
-          <textarea
-            placeholder="Script text"
-            rows={4}
-            className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
-            value={form.body}
-            onChange={(e) => setForm({ ...form, body: e.target.value })}
+          <ScriptRichTextEditor
+            key={adding ? "adding" : "not-adding"}
+            initialValue={form.body}
+            onChange={(html) => setForm({ ...form, body: html })}
           />
           <button
             disabled={saving}
@@ -667,11 +666,23 @@ function ScriptsPanel({ initialScripts, isOwner }: { initialScripts: SalesScript
                       </div>
                       {editing?.id === s.id ? (
                         <div className="mt-2 space-y-2">
-                          <textarea
-                            rows={6}
-                            className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm"
-                            value={editing.body}
-                            onChange={(e) => setEditing({ ...editing, body: e.target.value })}
+                          <input
+                            placeholder="Title"
+                            className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-sm font-medium"
+                            value={editing.title}
+                            onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                          />
+                          <input
+                            placeholder="Category"
+                            className="w-full rounded-md border border-[var(--hq-card-border)] px-3 py-2 text-xs text-neutral-600"
+                            value={editing.category}
+                            onChange={(e) => setEditing({ ...editing, category: e.target.value })}
+                          />
+                          <ScriptRichTextEditor
+                            key={editing.id}
+                            initialValue={editing.body}
+                            onChange={(html) => setEditing((cur) => (cur ? { ...cur, body: html } : cur))}
+                            minHeightClassName="min-h-[160px]"
                           />
                           <div className="flex gap-2">
                             <button
@@ -687,7 +698,10 @@ function ScriptsPanel({ initialScripts, isOwner }: { initialScripts: SalesScript
                           </div>
                         </div>
                       ) : (
-                        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--hq-text-muted)]">{s.body}</p>
+                        <div
+                          className="mt-1 text-sm text-[var(--hq-text-muted)] [&_li]:ml-4 [&_ol]:list-decimal [&_ul]:list-disc"
+                          dangerouslySetInnerHTML={{ __html: s.body }}
+                        />
                       )}
                     </div>
                   ))}

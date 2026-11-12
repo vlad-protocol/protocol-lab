@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { sanitizeScriptHtml } from "@/lib/sanitize-script-html";
 
 export async function GET() {
   const session = await auth();
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "title, category, and body are required." }, { status: 400 });
   }
   const script = await prisma.salesScript.create({
-    data: { title, category, body: text, updatedById: session.user.id },
+    data: { title, category, body: sanitizeScriptHtml(text), updatedById: session.user.id },
   });
   return NextResponse.json({ script });
 }
