@@ -23,9 +23,19 @@ const OWNER_REACHED_STAGES: CallStageReached[] = ["OWNER_REACHED", "PITCHED", "C
 const PITCHED_STAGES: CallStageReached[] = ["PITCHED", "CONVERSATION_2MIN", "VIDEO_CALL_BOOKED"];
 const CONVERSATION_STAGES: CallStageReached[] = ["CONVERSATION_2MIN", "VIDEO_CALL_BOOKED"];
 
+export type TouchPointBreakdown = { email: number; call: number; videoCall: number; text: number };
+
 export type RepTotals = {
   userId: string | null;
   name: string;
+  // Total outbound touches of any kind (email sent, call made, video call,
+  // text/SMS) in the range — a call made counts here too, so this is a
+  // superset of `dials`, not a separate pool. Follow-up touches are
+  // ordinary Interactions of these same types, so they're already
+  // included; there's no separate "follow-up" bucket to add. Goal per the
+  // Playbook: 100/rep/day (see the touch_points_per_rep_day benchmark).
+  touchPoints: number;
+  touchPointBreakdown: TouchPointBreakdown;
   dials: number;
   noAnswer: number;
   voicemail: number;
@@ -67,6 +77,8 @@ function emptyTotals(userId: string | null, name: string, dailyDialTarget: numbe
   return {
     userId,
     name,
+    touchPoints: 0,
+    touchPointBreakdown: { email: 0, call: 0, videoCall: 0, text: 0 },
     dials: 0,
     noAnswer: 0,
     voicemail: 0,
@@ -158,6 +170,44 @@ export async function computeSalesMetrics(opts: { from: Date; to: Date; repId?: 
       resultTag: call.resultTag,
       durationSeconds: call.durationSeconds,
     });
+  }
+
+  // Touch points: every outbound email, call, video call, and text in
+  // range — broader than `dials` (CALL only) on purpose, so a rep who's
+  // all email that day isn't invisible here. A rep with touches but no
+  // CALL interactions won't already be in byRepMap from the loop above,
+  // so this also creates their row rather than assuming it exists.
+  const touchInteractions = await prisma.interaction.findMany({
+    where: {
+      type: { in: ["EMAIL", "CALL", "VIDEO_CALL", "TEXT"] },
+      direction: "OUTBOUND",
+      occurredAt: { gte: from, lte: to },
+      ...(repId ? { userId: repId } : {}),
+    },
+    select: {
+      userId: true,
+      type: true,
+      user: { select: { id: true, name: true, email: true, salesDailyDialTarget: true } },
+    },
+  });
+
+  const BREAKDOWN_KEY: Record<string, keyof TouchPointBreakdown> = {
+    EMAIL: "email",
+    CALL: "call",
+    VIDEO_CALL: "videoCall",
+    TEXT: "text",
+  };
+
+  for (const touch of touchInteractions) {
+    const key = touch.userId || "unassigned";
+    const name = touch.user?.name || touch.user?.email || "Unassigned";
+    if (!byRepMap.has(key)) byRepMap.set(key, emptyTotals(touch.userId, name, touch.user?.salesDailyDialTarget ?? null));
+    const rep = byRepMap.get(key)!;
+    const breakdownKey = BREAKDOWN_KEY[touch.type];
+    for (const bucket of [team, rep]) {
+      bucket.touchPoints += 1;
+      if (breakdownKey) bucket.touchPointBreakdown[breakdownKey] += 1;
+    }
   }
 
   const byRep = Array.from(byRepMap.values()).map(finalize).sort((a, b) => b.dials - a.dials);

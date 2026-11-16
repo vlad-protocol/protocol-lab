@@ -18,9 +18,13 @@ import {
 import Link from "next/link";
 import { ScriptRichTextEditor } from "./script-rich-text-editor";
 
+type TouchPointBreakdown = { email: number; call: number; videoCall: number; text: number };
+
 type RepTotals = {
   userId: string | null;
   name: string;
+  touchPoints: number;
+  touchPointBreakdown: TouchPointBreakdown;
   dials: number;
   noAnswer: number;
   voicemail: number;
@@ -243,7 +247,13 @@ export function SalesDashboardView({
       )}
 
       {team && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <KpiCard
+            label="Touch points"
+            value={String(team.touchPoints)}
+            sub={`${team.touchPointBreakdown.email} email · ${team.touchPointBreakdown.call} call · ${team.touchPointBreakdown.videoCall} video · ${team.touchPointBreakdown.text} text`}
+            status={benchmarkStatus(team.touchPoints, benchmarkByKey["touch_points_per_rep_day"])}
+          />
           <KpiCard
             label="Dials"
             value={String(team.dials)}
@@ -334,6 +344,7 @@ export function SalesDashboardView({
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-[var(--hq-text-muted)]">
                   <th className="py-1 pr-3">Rep</th>
+                  <th className="py-1 pr-3 text-right">Touch points</th>
                   <th className="py-1 pr-3 text-right">Dials</th>
                   <th className="py-1 pr-3 text-right">Target</th>
                   <th className="py-1 pr-3 text-right">Owner reached</th>
@@ -350,6 +361,9 @@ export function SalesDashboardView({
                       <button className="hover:underline" onClick={() => openDrilldown(`${r.name}'s calls`, (c) => c.userId === r.userId)}>
                         {r.name}
                       </button>
+                    </td>
+                    <td className="py-1.5 pr-3 text-right" title={`${r.touchPointBreakdown.email} email · ${r.touchPointBreakdown.call} call · ${r.touchPointBreakdown.videoCall} video · ${r.touchPointBreakdown.text} text`}>
+                      {r.touchPoints}
                     </td>
                     <td className="py-1.5 pr-3 text-right">{r.dials}</td>
                     <td className="py-1.5 pr-3 text-right text-[var(--hq-text-muted)]">{r.dailyDialTarget ?? "—"}</td>
