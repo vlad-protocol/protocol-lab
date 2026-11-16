@@ -71,7 +71,11 @@ export default async function LeadDetailPage({
 
       <LeadHeader lead={lead} canDelete={session.user.role === "OWNER"} />
 
-      <PeoplePanel contactId={lead.id} people={lead.people} />
+      <PeoplePanel
+        contactId={lead.id}
+        primary={{ name: lead.contactName, title: lead.title, email: lead.email, phone: lead.phone }}
+        people={lead.people}
+      />
 
       <LeadDetails
         details={{

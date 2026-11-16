@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, Mail, Phone, Trash2, Pencil, Check, X } from "lucide-react";
+import { Building2, Trash2, Pencil, Check, X } from "lucide-react";
 import {
   type LeadPriority,
   type LeadStatus,
@@ -43,11 +43,6 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
   const [companyName, setCompanyName] = useState(lead.companyName || "");
   const [title, setTitle] = useState(lead.title || "");
   const [savingName, setSavingName] = useState(false);
-  const [editingContact, setEditingContact] = useState(false);
-  const [email, setEmail] = useState(lead.email || "");
-  const [phone, setPhone] = useState(lead.phone || "");
-  const [savingContact, setSavingContact] = useState(false);
-
   async function updateField(patch: Record<string, unknown>) {
     await fetch(`/api/contacts/${lead.id}`, {
       method: "PATCH",
@@ -74,22 +69,6 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
     setCompanyName(lead.companyName || "");
     setTitle(lead.title || "");
     setEditingName(false);
-  }
-
-  async function saveContact() {
-    setSavingContact(true);
-    await updateField({
-      email: email.trim() || null,
-      phone: phone.trim() || null,
-    });
-    setSavingContact(false);
-    setEditingContact(false);
-  }
-
-  function cancelEditContact() {
-    setEmail(lead.email || "");
-    setPhone(lead.phone || "");
-    setEditingContact(false);
   }
 
   async function handleDelete() {
@@ -177,70 +156,6 @@ export function LeadHeader({ lead, canDelete }: { lead: Lead; canDelete: boolean
           </button>
         )}
       </div>
-
-      {editingContact ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="rounded bg-[var(--hq-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--hq-accent)]">
-            Primary contact
-          </span>
-          <input
-            autoFocus
-            type="email"
-            placeholder="Email"
-            className="rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveContact()}
-          />
-          <input
-            type="tel"
-            placeholder="Phone"
-            className="rounded-md border border-[var(--hq-card-border)] px-2 py-1 text-sm"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveContact()}
-          />
-          <button
-            onClick={saveContact}
-            disabled={savingContact}
-            title="Save"
-            className="text-[var(--hq-positive)] hover:opacity-70 disabled:opacity-50"
-          >
-            <Check className="h-4 w-4" />
-          </button>
-          <button onClick={cancelEditContact} title="Cancel" className="text-[var(--hq-text-muted)] hover:text-red-600">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
-        <div className="group mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--hq-text-muted)]">
-          {(lead.email || lead.phone) && (
-            <span className="rounded bg-[var(--hq-accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--hq-accent)]">
-              Primary contact
-            </span>
-          )}
-          {lead.email && (
-            <span className="flex items-center gap-1">
-              <Mail className="h-3.5 w-3.5" /> {lead.email}
-            </span>
-          )}
-          {lead.phone && (
-            <span className="flex items-center gap-1">
-              <Phone className="h-3.5 w-3.5" /> {lead.phone}
-            </span>
-          )}
-          {!lead.email && !lead.phone && (
-            <span className="text-amber-600">No primary contact email/phone set yet — automated sequences can't send until one is added.</span>
-          )}
-          <button
-            onClick={() => setEditingContact(true)}
-            title="Edit primary contact info"
-            className="flex items-center gap-1 text-[var(--hq-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--hq-accent)]"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <div>
