@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prebuild": "node scripts/stage-ffmpeg.js",
+    "predev": "node scripts/stage-ffmpeg.js"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1129.0",

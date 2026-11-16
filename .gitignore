@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ffmpeg binary staged into public/ at build time (scripts/stage-ffmpeg.js) —
+# a build artifact, not source; ~50MB, never commit it.
+/public/_bin/

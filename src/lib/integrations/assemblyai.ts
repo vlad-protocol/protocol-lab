@@ -22,45 +22,34 @@ import { spawn } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-// ffmpeg-static's default export is the absolute path to a static ffmpeg
-// binary for this platform (string), or null if none is bundled for it.
-import ffmpegPath from "ffmpeg-static";
 
-// ffmpeg-static downloads its actual binary via its own npm "install"
-// lifecycle script — which depends on install scripts being allowed to
-// run at all. That's turned out to be fragile (npm's newer
-// install-scripts allowlist silently skipped it on one deploy, and it's
-// easy to imagine other ways a postinstall step gets dropped between
-// build and the running container — a layer-caching quirk, a pruned
-// image, etc.). Rather than relying on that happening correctly, check
-// the binary is actually on disk right before we need it and, if not,
-// run ffmpeg-static's own install script ourselves, once per container
-// lifetime — self-healing regardless of why it went missing.
-let ensureFfmpegPromise: Promise<string> | null = null;
+// The ffmpeg binary lives at a literal, build-time-known path -- staged
+// into public/_bin/ffmpeg by scripts/stage-ffmpeg.js (runs via
+// "prebuild"/"predev" in package.json), copied from ffmpeg-static's own
+// install step. This is deliberately NOT ffmpeg-static's own path (a
+// runtime value computed from node_modules) -- that distinction is what
+// kept breaking: Next's Turbopack build warned that spawning ffmpeg with a
+// *dynamically resolved* path forces it to fall back to tracing the whole
+// project just to be safe, and even then, ffmpeg-static's install.js
+// (only ever reached via child_process.spawn, never require()'d, so
+// invisible to that tracing either way) kept vanishing from the deployed
+// container at runtime -- "Cannot find module .../ffmpeg-static/install.js"
+// -- which is what made every previous self-healing attempt here fail too,
+// even after the binary itself started showing up. public/ is the one
+// thing Next ships verbatim in every output mode regardless of tracing, so
+// this path is both a plain string literal (no more dynamic-fs-access
+// warning) and guaranteed to exist in the deployed image.
+const FFMPEG_BINARY_PATH = path.join(process.cwd(), "public", "_bin", "ffmpeg");
 
 async function ensureFfmpegBinary(): Promise<string> {
-  if (!ffmpegPath) throw new Error("ffmpeg-static has no bundled binary for this platform.");
-  if (!ensureFfmpegPromise) {
-    ensureFfmpegPromise = (async () => {
-      try {
-        await access(ffmpegPath as string);
-        return ffmpegPath as string;
-      } catch {
-        const installScript = path.join(path.dirname(ffmpegPath as string), "install.js");
-        await new Promise<void>((resolve, reject) => {
-          const proc = spawn(process.execPath, [installScript], { stdio: "inherit" });
-          proc.on("error", reject);
-          proc.on("close", (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`ffmpeg-static's install.js exited with code ${code} while fetching the ffmpeg binary.`));
-          });
-        });
-        await access(ffmpegPath as string);
-        return ffmpegPath as string;
-      }
-    })();
+  try {
+    await access(FFMPEG_BINARY_PATH);
+  } catch {
+    throw new Error(
+      `ffmpeg binary not found at ${FFMPEG_BINARY_PATH} -- scripts/stage-ffmpeg.js should have staged it during the build (see package.json's "prebuild"/"predev" scripts). A deploy that skipped the build step, or ran it from a cache that predates this script, would hit this.`,
+    );
   }
-  return ensureFfmpegPromise;
+  return FFMPEG_BINARY_PATH;
 }
 
 // Self-hosted — nothing to configure. Kept as a function (not a const)
