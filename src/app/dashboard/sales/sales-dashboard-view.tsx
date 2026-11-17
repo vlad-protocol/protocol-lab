@@ -54,7 +54,25 @@ type CallRow = {
   durationSeconds: number | null;
 };
 
-type Metrics = { from: string; to: string; team: RepTotals; byRep: RepTotals[]; calls: CallRow[] };
+type TouchRow = {
+  id: string;
+  occurredAt: string;
+  userId: string | null;
+  repName: string;
+  type: "EMAIL" | "CALL" | "VIDEO_CALL" | "TEXT";
+  contactId: string;
+  contactName: string;
+  subject: string | null;
+};
+
+const TOUCH_TYPE_LABEL: Record<TouchRow["type"], string> = {
+  EMAIL: "Email",
+  CALL: "Call",
+  VIDEO_CALL: "Video call",
+  TEXT: "Text",
+};
+
+type Metrics = { from: string; to: string; team: RepTotals; byRep: RepTotals[]; calls: CallRow[]; touches: TouchRow[] };
 type Rep = { id: string; name: string | null; email: string; salesDailyDialTarget: number | null };
 type Benchmark = { id: string; metricKey: string; label: string; unit: string; amberMin: number; greenMin: number };
 
@@ -150,6 +168,7 @@ export function SalesDashboardView({
   const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [drilldown, setDrilldown] = useState<{ title: string; calls: CallRow[] } | null>(null);
+  const [touchDrilldown, setTouchDrilldown] = useState<{ title: string; touches: TouchRow[] } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   async function load() {
@@ -179,6 +198,11 @@ export function SalesDashboardView({
   function openDrilldown(title: string, filter: (c: CallRow) => boolean) {
     if (!metrics) return;
     setDrilldown({ title, calls: metrics.calls.filter(filter) });
+  }
+
+  function openTouchDrilldown(title: string, filter: (t: TouchRow) => boolean) {
+    if (!metrics) return;
+    setTouchDrilldown({ title, touches: metrics.touches.filter(filter) });
   }
 
   return (
@@ -253,6 +277,7 @@ export function SalesDashboardView({
             value={String(team.touchPoints)}
             sub={`${team.touchPointBreakdown.email} email · ${team.touchPointBreakdown.call} call · ${team.touchPointBreakdown.videoCall} video · ${team.touchPointBreakdown.text} text`}
             status={benchmarkStatus(team.touchPoints, benchmarkByKey["touch_points_per_rep_day"])}
+            onClick={() => openTouchDrilldown("All touch points", () => true)}
           />
           <KpiCard
             label="Dials"
@@ -363,7 +388,12 @@ export function SalesDashboardView({
                       </button>
                     </td>
                     <td className="py-1.5 pr-3 text-right" title={`${r.touchPointBreakdown.email} email · ${r.touchPointBreakdown.call} call · ${r.touchPointBreakdown.videoCall} video · ${r.touchPointBreakdown.text} text`}>
-                      {r.touchPoints}
+                      <button
+                        className="hover:underline"
+                        onClick={() => openTouchDrilldown(`${r.name}'s touch points`, (t) => t.userId === r.userId)}
+                      >
+                        {r.touchPoints}
+                      </button>
                     </td>
                     <td className="py-1.5 pr-3 text-right">{r.dials}</td>
                     <td className="py-1.5 pr-3 text-right text-[var(--hq-text-muted)]">{r.dailyDialTarget ?? "—"}</td>
@@ -387,6 +417,51 @@ export function SalesDashboardView({
       <ScriptsPanel initialScripts={initialScripts} isOwner={isOwner} />
 
       {drilldown && <DrilldownModal title={drilldown.title} calls={drilldown.calls} onClose={() => setDrilldown(null)} />}
+      {touchDrilldown && (
+        <TouchDrilldownModal title={touchDrilldown.title} touches={touchDrilldown.touches} onClose={() => setTouchDrilldown(null)} />
+      )}
+    </div>
+  );
+}
+
+function TouchDrilldownModal({ title, touches, onClose }: { title: string; touches: TouchRow[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl rounded-xl border border-[var(--hq-card-border)] bg-white p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-[var(--hq-text)]">
+            {title} <span className="text-[var(--hq-text-muted)]">({touches.length})</span>
+          </p>
+          <button onClick={onClose}>
+            <X className="h-4 w-4 text-[var(--hq-text-muted)]" />
+          </button>
+        </div>
+        <div className="mt-3 max-h-[60vh] space-y-1 overflow-y-auto">
+          {touches.length === 0 && <p className="text-sm text-[var(--hq-text-muted)]">No touch points in this range yet.</p>}
+          {touches.map((t) => (
+            <Link
+              key={t.id}
+              href={`/dashboard/protocol-crm/${t.contactId}`}
+              className="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-[var(--hq-canvas)]"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-[var(--hq-text)]">
+                  {t.contactName}
+                  {t.subject && <span className="font-normal text-[var(--hq-text-muted)]"> — {t.subject}</span>}
+                </span>
+                <span className="block text-xs text-[var(--hq-text-muted)]">
+                  {t.repName} · {new Date(t.occurredAt).toLocaleString()}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs text-[var(--hq-text-muted)]">{TOUCH_TYPE_LABEL[t.type]}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--hq-text-muted)]" />
+            </Link>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

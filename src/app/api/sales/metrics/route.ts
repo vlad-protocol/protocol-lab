@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession as auth } from "@/lib/session";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { computeSalesMetrics, resolveRange } from "@/lib/sales-metrics";
+import { computeSalesMetrics, resolveRange, startOfDateStringInTz, endOfDateStringInTz } from "@/lib/sales-metrics";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
   const { from, to } =
     range === "custom" && fromParam && toParam
-      ? { from: new Date(fromParam + "T00:00:00"), to: new Date(new Date(toParam + "T23:59:59.999")) }
+      ? { from: startOfDateStringInTz(fromParam), to: endOfDateStringInTz(toParam) }
       : resolveRange(range);
 
   const [metrics, reps, benchmarks] = await Promise.all([

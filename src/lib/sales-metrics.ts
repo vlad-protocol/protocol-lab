@@ -10,6 +10,80 @@ import { prisma } from "@/lib/prisma";
 // Calls module (Playbook build phase 2, not built yet) so they're
 // reported as unavailable rather than faked from call data alone.
 
+// "Today"/"this week"/etc. must mean the rep's actual day, not the
+// server's. Railway's container clock is UTC, so without this, "Today"
+// at 6am in Montreal was starting at 7pm the *previous* evening Eastern
+// time (UTC midnight), double-counting yesterday evening's activity as
+// today's. Matches lib/booking.ts's DEFAULT_TIME_ZONE — the rest of this
+// app already assumes Eastern/Montreal.
+const BUSINESS_TZ = "America/Toronto";
+
+// The real UTC-ms offset (negative for zones behind UTC, e.g. -18000000
+// for Eastern Standard Time) that's in effect at `date` in `timeZone`.
+function tzOffsetMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date);
+  const p: Record<string, string> = {};
+  for (const part of parts) if (part.type !== "literal") p[part.type] = part.value;
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return asUtc - date.getTime();
+}
+
+// The calendar date (and weekday, 0=Sun..6=Sat) that `date` falls on when
+// viewed in `timeZone`.
+function zonedYMD(date: Date, timeZone: string): { y: number; m: number; d: number; dow: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+  const p: Record<string, string> = {};
+  for (const part of parts) if (part.type !== "literal") p[part.type] = part.value;
+  const DOW: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return { y: +p.year, m: +p.month, d: +p.day, dow: DOW[p.weekday] };
+}
+
+// Shifts a plain calendar date by `days` using pure UTC calendar math (no
+// real time zone involved at this step) — safe from DST edge cases since
+// it never represents a real instant until startOfDayInTz converts it.
+function shiftYMD(y: number, m: number, d: number, days: number): { y: number; m: number; d: number } {
+  const t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() + days);
+  return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() };
+}
+
+// The real UTC instant of local midnight on calendar date (y, m, d) in
+// `timeZone`.
+function startOfDayInTz(y: number, m: number, d: number, timeZone: string): Date {
+  const guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  const offsetMs = tzOffsetMs(guess, timeZone);
+  return new Date(guess.getTime() - offsetMs);
+}
+
+// Parses a "YYYY-MM-DD" string (from the dashboard's custom-range date
+// inputs) as a calendar day in the business time zone, not UTC or the
+// server's own clock.
+export function startOfDateStringInTz(ymd: string, timeZone: string = BUSINESS_TZ): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return startOfDayInTz(y, m, d, timeZone);
+}
+
+export function endOfDateStringInTz(ymd: string, timeZone: string = BUSINESS_TZ): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const next = shiftYMD(y, m, d, 1);
+  return new Date(startOfDayInTz(next.y, next.m, next.d, timeZone).getTime() - 1);
+}
+
 export type CallStageReached =
   | "NO_ANSWER"
   | "VOICEMAIL"
@@ -65,12 +139,24 @@ export type CallRow = {
   durationSeconds: number | null;
 };
 
+export type TouchRow = {
+  id: string;
+  occurredAt: string;
+  userId: string | null;
+  repName: string;
+  type: "EMAIL" | "CALL" | "VIDEO_CALL" | "TEXT";
+  contactId: string;
+  contactName: string;
+  subject: string | null;
+};
+
 export type SalesMetrics = {
   from: string;
   to: string;
   team: RepTotals;
   byRep: RepTotals[];
   calls: CallRow[];
+  touches: TouchRow[];
 };
 
 function emptyTotals(userId: string | null, name: string, dailyDialTarget: number | null = null): RepTotals {
@@ -185,10 +271,15 @@ export async function computeSalesMetrics(opts: { from: Date; to: Date; repId?: 
       ...(repId ? { userId: repId } : {}),
     },
     select: {
+      id: true,
       userId: true,
       type: true,
+      occurredAt: true,
+      subject: true,
       user: { select: { id: true, name: true, email: true, salesDailyDialTarget: true } },
+      contact: { select: { id: true, companyName: true, contactName: true } },
     },
+    orderBy: { occurredAt: "desc" },
   });
 
   const BREAKDOWN_KEY: Record<string, keyof TouchPointBreakdown> = {
@@ -197,6 +288,8 @@ export async function computeSalesMetrics(opts: { from: Date; to: Date; repId?: 
     VIDEO_CALL: "videoCall",
     TEXT: "text",
   };
+
+  const touchRows: TouchRow[] = [];
 
   for (const touch of touchInteractions) {
     const key = touch.userId || "unassigned";
@@ -208,6 +301,17 @@ export async function computeSalesMetrics(opts: { from: Date; to: Date; repId?: 
       bucket.touchPoints += 1;
       if (breakdownKey) bucket.touchPointBreakdown[breakdownKey] += 1;
     }
+
+    touchRows.push({
+      id: touch.id,
+      occurredAt: touch.occurredAt.toISOString(),
+      userId: touch.userId,
+      repName: name,
+      type: touch.type as TouchRow["type"],
+      contactId: touch.contact.id,
+      contactName: touch.contact.companyName || touch.contact.contactName,
+      subject: touch.subject,
+    });
   }
 
   const byRep = Array.from(byRepMap.values()).map(finalize).sort((a, b) => b.dials - a.dials);
@@ -218,36 +322,34 @@ export async function computeSalesMetrics(opts: { from: Date; to: Date; repId?: 
     team: finalize(team),
     byRep,
     calls: rows,
+    touches: touchRows,
   };
 }
 
-// Named ranges the dashboard offers — always computed against the server's
-// clock at request time, not cached. "custom" is handled by the caller
-// (API route), which passes explicit from/to instead of calling this.
+// Named ranges the dashboard offers — always computed against the
+// server's clock at request time (not cached), but the day/week/month
+// boundaries themselves are in BUSINESS_TZ, not the server's own clock
+// or UTC. "custom" is handled by the caller (API route), which calls
+// startOfDateStringInTz/endOfDateStringInTz instead of this.
 export function resolveRange(range: string): { from: Date; to: Date } {
   const now = new Date();
   const to = now;
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
+  const today = zonedYMD(now, BUSINESS_TZ);
+  const startOfToday = startOfDayInTz(today.y, today.m, today.d, BUSINESS_TZ);
 
   switch (range) {
     case "today":
       return { from: startOfToday, to };
     case "week": {
-      const from = new Date(startOfToday);
-      const day = from.getDay();
-      const diff = from.getDate() - day + (day === 0 ? -6 : 1); // Monday start
-      from.setDate(diff);
-      return { from, to };
+      const daysSinceMonday = today.dow === 0 ? 6 : today.dow - 1;
+      const monday = shiftYMD(today.y, today.m, today.d, -daysSinceMonday);
+      return { from: startOfDayInTz(monday.y, monday.m, monday.d, BUSINESS_TZ), to };
     }
-    case "month": {
-      const from = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
-      return { from, to };
-    }
+    case "month":
+      return { from: startOfDayInTz(today.y, today.m, 1, BUSINESS_TZ), to };
     case "30d": {
-      const from = new Date(startOfToday);
-      from.setDate(from.getDate() - 29);
-      return { from, to };
+      const start = shiftYMD(today.y, today.m, today.d, -29);
+      return { from: startOfDayInTz(start.y, start.m, start.d, BUSINESS_TZ), to };
     }
     default:
       return { from: startOfToday, to };
